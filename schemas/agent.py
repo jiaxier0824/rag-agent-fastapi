@@ -1,5 +1,11 @@
 from pydantic import BaseModel, Field
 
+
+class SourceReference(BaseModel):
+    filename: str = Field(
+        description="本次 Agent 回答使用的 RAG 来源文件名",
+    )
+
 class AgentChatRequest(BaseModel):
     question: str = Field(
         min_length=1,
@@ -22,4 +28,9 @@ class AgentChatResponse(BaseModel):
 
     trace_id: str = Field(
         description="本次 Agent 请求追踪号"
+    )
+
+    sources: list[SourceReference] = Field(
+        default_factory=list,
+        description="本次回答使用的知识库来源",
     )

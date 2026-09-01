@@ -30,10 +30,10 @@ services:
 
   rag:
     build:
-      context: ../RAG_project/P4_RAG项目案例
+      context: ../RAG_project/RAG_FastAPI
       dockerfile: Dockerfile
     env_file:
-      - ../RAG_project/P4_RAG项目案例/.env
+      - ../RAG_project/RAG_FastAPI/.env
     environment:
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:?请先设置 DASHSCOPE_API_KEY}
       DB_HOST: mysql

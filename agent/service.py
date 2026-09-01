@@ -2,11 +2,14 @@ import logging
 from collections.abc import Callable, Iterator
 from queue import Queue
 from threading import Thread
+from time import perf_counter
 
 from langchain.agents import create_agent
 from langchain_community.chat_models.tongyi import ChatTongyi
 
 from agent.rag_client import RagApiClient
+from agent.execution import AgentExecutionContext, AgentExecutionResult
+from agent.observability import AgentTraceLogger
 from agent.tools import build_tools
 from config.settings import settings
 from agent.study_plan_store import StudyPlanStore
@@ -17,6 +20,7 @@ class AgentService:
         self,
         rag_client: RagApiClient,
         study_plan_store: StudyPlanStore,
+        trace_logger: AgentTraceLogger | None = None,
         model_name: str = settings.agent_model_name,
         fallback_model_name: str = settings.agent_fallback_model_name,
     ):
@@ -24,6 +28,7 @@ class AgentService:
         self.study_plan_store = study_plan_store
         self.model_name = model_name
         self.fallback_model_name = fallback_model_name
+        self.trace_logger = trace_logger
 
         self.model = ChatTongyi(model=model_name)
         self.fallback_model = ChatTongyi(
@@ -35,6 +40,7 @@ class AgentService:
         session_id: str,
         trace_id: str,
         model: ChatTongyi,
+        execution_context: AgentExecutionContext,
         on_status: Callable[[str], None] | None = None,
     ):
         return create_agent(
@@ -44,6 +50,7 @@ class AgentService:
                 session_id=session_id,
                 trace_id=trace_id,
                 study_plan_store=self.study_plan_store,
+                execution_context=execution_context,
                 on_status=on_status,
             ),
             system_prompt=(
@@ -65,11 +72,13 @@ class AgentService:
         question: str,
         session_id: str,
         trace_id: str,
+        execution_context: AgentExecutionContext,
     ) -> str:
         agent = self._build_agent(
             session_id=session_id,
             trace_id=trace_id,
             model=model,
+            execution_context=execution_context,
         )
         result = agent.invoke(
             {
@@ -88,7 +97,11 @@ class AgentService:
         question: str,
         session_id: str,
         trace_id: str,
-    ) -> str:
+    ) -> AgentExecutionResult:
+        execution_context = AgentExecutionContext()
+        started_at = perf_counter()
+        degraded = False
+        model_used = self.model_name
         logger.info(
             "Agent 使用主模型开始处理：model=%s, trace_id=%s, session_id=%s",
             self.model_name,
@@ -102,8 +115,11 @@ class AgentService:
                 question=question,
                 session_id=session_id,
                 trace_id=trace_id,
+                execution_context=execution_context,
             )
         except Exception:
+            degraded = True
+            model_used = self.fallback_model_name
             logger.warning(
                 "主模型调用失败，切换备用模型：primary=%s, fallback=%s, trace_id=%s",
                 self.model_name,
@@ -111,12 +127,37 @@ class AgentService:
                 trace_id,
                 exc_info=True,
             )
-            answer = self._invoke_agent(
-                model=self.fallback_model,
-                question=question,
-                session_id=session_id,
-                trace_id=trace_id,
-            )
+            try:
+                answer = self._invoke_agent(
+                    model=self.fallback_model,
+                    question=question,
+                    session_id=session_id,
+                    trace_id=trace_id,
+                    execution_context=execution_context,
+                )
+            except Exception:
+                logger.exception(
+                    "备用模型调用也失败：trace_id=%s",
+                    trace_id,
+                )
+                failed_result = AgentExecutionResult(
+                    answer="",
+                    sources=execution_context.sources,
+                    rag_trace_ids=execution_context.rag_trace_ids,
+                    tools_called=execution_context.tools_called,
+                    rag_cache_hit=execution_context.rag_cache_hit,
+                    model_used=model_used,
+                    degraded=degraded,
+                )
+                self._write_trace(
+                    trace_id=trace_id,
+                    session_id=session_id,
+                    mode="sync",
+                    result=failed_result,
+                    elapsed_ms=round((perf_counter() - started_at) * 1000, 2),
+                    success=False,
+                )
+                raise
 
         logger.info(
             "Agent 处理完成：trace_id=%s, session_id=%s",
@@ -124,14 +165,35 @@ class AgentService:
             session_id,
         )
 
-        return answer
+        result = AgentExecutionResult(
+            answer=answer,
+            sources=execution_context.sources,
+            rag_trace_ids=execution_context.rag_trace_ids,
+            tools_called=execution_context.tools_called,
+            rag_cache_hit=execution_context.rag_cache_hit,
+            model_used=model_used,
+            degraded=degraded,
+        )
+        self._write_trace(
+            trace_id=trace_id,
+            session_id=session_id,
+            mode="sync",
+            result=result,
+            elapsed_ms=round((perf_counter() - started_at) * 1000, 2),
+            success=True,
+        )
+        return result
 
     def stream_execute(
         self,
         question: str,
         session_id: str,
         trace_id: str,
-    ) -> Iterator[dict[str, str]]:
+    ) -> Iterator[dict[str, object]]:
+        execution_context = AgentExecutionContext()
+        started_at = perf_counter()
+        model_used = self.model_name
+        degraded = False
         logger.info(
             "Agent 使用主模型开始流式处理：model=%s, trace_id=%s, session_id=%s",
             self.model_name,
@@ -152,6 +214,7 @@ class AgentService:
                 question=question,
                 session_id=session_id,
                 trace_id=trace_id,
+                execution_context=execution_context,
             ):
                 if event["type"] == "content" and not has_emitted_content:
                     yield {
@@ -172,6 +235,16 @@ class AgentService:
                     "type": "error",
                     "content": "回答生成中断，请重新提问。",
                 }
+                self._write_stream_trace(
+                    trace_id=trace_id,
+                    session_id=session_id,
+                    execution_context=execution_context,
+                    model_used=model_used,
+                    degraded=degraded,
+                    started_at=started_at,
+                    success=False,
+                )
+                yield self._metadata_event(execution_context)
                 return
 
             logger.warning(
@@ -186,6 +259,8 @@ class AgentService:
                 "type": "status",
                 "content": "主模型暂时不可用，正在切换备用模型",
             }
+            degraded = True
+            model_used = self.fallback_model_name
 
             yield {
                 "type": "status",
@@ -198,6 +273,7 @@ class AgentService:
                     question=question,
                     session_id=session_id,
                     trace_id=trace_id,
+                    execution_context=execution_context,
                 ):
                     yield event
             except Exception:
@@ -209,6 +285,16 @@ class AgentService:
                     "type": "error",
                     "content": "当前模型服务暂时不可用，请稍后重试。",
                 }
+                self._write_stream_trace(
+                    trace_id=trace_id,
+                    session_id=session_id,
+                    execution_context=execution_context,
+                    model_used=model_used,
+                    degraded=degraded,
+                    started_at=started_at,
+                    success=False,
+                )
+                yield self._metadata_event(execution_context)
                 return
 
         logger.info(
@@ -216,6 +302,16 @@ class AgentService:
             trace_id,
             session_id,
         )
+        self._write_stream_trace(
+            trace_id=trace_id,
+            session_id=session_id,
+            execution_context=execution_context,
+            model_used=model_used,
+            degraded=degraded,
+            started_at=started_at,
+            success=True,
+        )
+        yield self._metadata_event(execution_context)
 
     def _stream_agent(
         self,
@@ -223,11 +319,13 @@ class AgentService:
         question: str,
         session_id: str,
         trace_id: str,
+        execution_context: AgentExecutionContext,
         on_status: Callable[[str], None] | None = None,
     ) -> Iterator[str]:
         agent = self._build_agent(
             session_id=session_id,
             trace_id=trace_id,
+            execution_context=execution_context,
             model=model,
             on_status=on_status,
         )
@@ -257,7 +355,8 @@ class AgentService:
         question: str,
         session_id: str,
         trace_id: str,
-    ) -> Iterator[dict[str, str]]:
+        execution_context: AgentExecutionContext,
+    ) -> Iterator[dict[str, object]]:
         event_queue = Queue()
         stream_finished = object()
 
@@ -274,6 +373,7 @@ class AgentService:
                     question=question,
                     session_id=session_id,
                     trace_id=trace_id,
+                    execution_context=execution_context,
                     on_status=publish_status,
                 ):
                     event_queue.put({
@@ -297,3 +397,70 @@ class AgentService:
                 raise event
 
             yield event
+
+    @staticmethod
+    def _metadata_event(execution_context: AgentExecutionContext) -> dict:
+        return {
+            "type": "metadata",
+            "content": "",
+            "sources": execution_context.sources,
+            "rag_trace_ids": execution_context.rag_trace_ids,
+        }
+
+    def _write_stream_trace(
+        self,
+        *,
+        trace_id: str,
+        session_id: str,
+        execution_context: AgentExecutionContext,
+        model_used: str,
+        degraded: bool,
+        started_at: float,
+        success: bool,
+    ) -> None:
+        result = AgentExecutionResult(
+            answer="",
+            sources=execution_context.sources,
+            rag_trace_ids=execution_context.rag_trace_ids,
+            tools_called=execution_context.tools_called,
+            rag_cache_hit=execution_context.rag_cache_hit,
+            model_used=model_used,
+            degraded=degraded,
+        )
+        self._write_trace(
+            trace_id=trace_id,
+            session_id=session_id,
+            mode="stream",
+            result=result,
+            elapsed_ms=round((perf_counter() - started_at) * 1000, 2),
+            success=success,
+        )
+
+    def _write_trace(
+        self,
+        *,
+        trace_id: str,
+        session_id: str,
+        mode: str,
+        result: AgentExecutionResult,
+        elapsed_ms: float,
+        success: bool,
+    ) -> None:
+        if self.trace_logger is None:
+            return
+
+        self.trace_logger.write(
+            {
+                "trace_id": trace_id,
+                "session_id": session_id,
+                "mode": mode,
+                "success": success,
+                "model_used": result.model_used,
+                "degraded": result.degraded,
+                "tools_called": result.tools_called,
+                "rag_cache_hit": result.rag_cache_hit,
+                "rag_trace_ids": result.rag_trace_ids,
+                "sources": result.sources,
+                "total_ms": elapsed_ms,
+            }
+        )

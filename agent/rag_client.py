@@ -1,4 +1,5 @@
 import logging
+from dataclasses import dataclass
 from time import sleep
 
 import httpx
@@ -8,6 +9,14 @@ from config.settings import settings
 
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class RagQueryResult:
+    answer: str
+    sources: list[str]
+    rag_trace_id: str | None
+    cache_hit: bool
 
 
 class RagApiClient:
@@ -29,7 +38,8 @@ class RagApiClient:
         self,
         question: str,
         session_id: str,
-    ) -> str:
+        trace_id: str,
+    ) -> RagQueryResult:
         cached_answer = self.cache.get(
             question=question,
             session_id=session_id,
@@ -40,7 +50,12 @@ class RagApiClient:
                 "RAG 缓存命中：session_id=%s",
                 session_id,
             )
-            return cached_answer
+            return RagQueryResult(
+                answer=cached_answer.answer,
+                sources=cached_answer.sources,
+                rag_trace_id=cached_answer.rag_trace_id,
+                cache_hit=True,
+            )
 
         logger.info(
             "RAG 缓存未命中：session_id=%s",
@@ -55,20 +70,34 @@ class RagApiClient:
                         "question": question,
                         "session_id": session_id,
                     },
+                    headers={"X-Trace-ID": trace_id},
                     timeout=self.timeout_seconds,
                 )
 
                 response.raise_for_status()
                 data = response.json()
                 answer = data["answer"]
+                sources = [
+                    source["filename"]
+                    for source in data.get("sources", [])
+                    if isinstance(source, dict) and source.get("filename")
+                ]
+                rag_trace_id = data.get("trace_id")
 
                 self.cache.set(
                     question=question,
                     session_id=session_id,
                     answer=answer,
+                    sources=sources,
+                    rag_trace_id=rag_trace_id,
                 )
 
-                return answer
+                return RagQueryResult(
+                    answer=answer,
+                    sources=sources,
+                    rag_trace_id=rag_trace_id,
+                    cache_hit=False,
+                )
 
             except httpx.HTTPStatusError as error:
                 status_code = error.response.status_code
@@ -79,7 +108,12 @@ class RagApiClient:
                         status_code,
                         session_id,
                     )
-                    return "课程资料请求参数异常，请检查后重试。"
+                    return RagQueryResult(
+                        answer="课程资料请求参数异常，请检查后重试。",
+                        sources=[],
+                        rag_trace_id=None,
+                        cache_hit=False,
+                    )
 
                 error_message = "课程资料服务返回异常，请稍后重试。"
 
@@ -94,7 +128,12 @@ class RagApiClient:
                     "RAG 返回数据格式异常：session_id=%s",
                     session_id,
                 )
-                return "课程资料服务返回的数据格式异常，请稍后重试。"
+                return RagQueryResult(
+                    answer="课程资料服务返回的数据格式异常，请稍后重试。",
+                    sources=[],
+                    rag_trace_id=None,
+                    cache_hit=False,
+                )
 
             if attempt == self.max_retries:
                 logger.warning(
@@ -102,7 +141,12 @@ class RagApiClient:
                     attempt + 1,
                     session_id,
                 )
-                return error_message
+                return RagQueryResult(
+                    answer=error_message,
+                    sources=[],
+                    rag_trace_id=None,
+                    cache_hit=False,
+                )
 
             wait_seconds = self.retry_interval_seconds * (attempt + 1)
 

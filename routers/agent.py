@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 
 from agent.service import AgentService
 from dependencies import get_agent_service
-from schemas.agent import AgentChatRequest, AgentChatResponse
+from schemas.agent import AgentChatRequest, AgentChatResponse, SourceReference
 
 router = APIRouter(
     prefix="/api/agent",
@@ -21,16 +21,20 @@ def chat_with_agent(
     agent_service: AgentService = Depends(get_agent_service),
 ) -> AgentChatResponse:
     trace_id = uuid4().hex
-    answer = agent_service.execute(
+    result = agent_service.execute(
         question=request.question,
         session_id=request.session_id,
         trace_id=trace_id,
     )
 
     return AgentChatResponse(
-        answer=answer,
+        answer=result.answer,
         session_id=request.session_id,
         trace_id=trace_id,
+        sources=[
+            SourceReference(filename=filename)
+            for filename in result.sources
+        ],
     )
 
 
@@ -42,11 +46,19 @@ def stream_chat_with_agent(
     trace_id = uuid4().hex
 
     def event_generator() -> Iterator[str]:
+        sources: list[str] = []
+        rag_trace_ids: list[str] = []
+
         for event in agent_service.stream_execute(
             question=request.question,
             session_id=request.session_id,
             trace_id=trace_id,
         ):
+            if event["type"] == "metadata":
+                sources = event.get("sources", [])
+                rag_trace_ids = event.get("rag_trace_ids", [])
+                continue
+
             data = {
                 "type": event["type"],
                 "content": event["content"],
@@ -64,6 +76,11 @@ def stream_chat_with_agent(
             "content": "",
             "session_id": request.session_id,
             "trace_id": trace_id,
+            "sources": [
+                {"filename": filename}
+                for filename in sources
+            ],
+            "rag_trace_ids": rag_trace_ids,
         }
 
         yield (

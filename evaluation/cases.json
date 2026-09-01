@@ -3,30 +3,35 @@
     "id": "infs7410_project_part1_deadline",
     "question": "INFS7410 Project Part 1 的截止时间是什么？",
     "expected_keywords": ["9月4", "4"],
+    "expected_sources": ["INFS7410_Sem2_2026_assessment_summary.md"],
     "expected_status": "正在检索课程资料"
   },
   {
     "id": "infs7410_quiz_scoring",
     "question": "INFS7410 的 Weekly quizzes 最终如何计分？",
     "expected_keywords": ["13", "10"],
+    "expected_sources": ["INFS7410_Sem2_2026_assessment_summary.md"],
     "expected_status": "正在检索课程资料"
   },
   {
     "id": "reit6811_assignment1_deadline",
     "question": "REIT6811 Assignment 1 的截止时间是什么？",
     "expected_keywords": ["9月7", "4"],
+    "expected_sources": ["REIT6811_Sem2_2026_assessment_summary.md"],
     "expected_status": "正在检索课程资料"
   },
   {
     "id": "reit6811_exam_hurdle",
     "question": "REIT6811 想通过课程，期末考试至少需要多少分？",
     "expected_keywords": ["40"],
+    "expected_sources": ["REIT6811_Sem2_2026_assessment_summary.md"],
     "expected_status": "正在检索课程资料"
   },
   {
     "id": "infs7410_oral_exam",
     "question": "为什么 INFS7410 的 Final Oral Exam 很重要？",
     "expected_keywords": ["50", "25"],
+    "expected_sources": ["INFS7410_Sem2_2026_assessment_summary.md"],
     "expected_status": "正在检索课程资料"
   }
 ]

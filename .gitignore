@@ -9,3 +9,5 @@ md5.text
 .DS_Store
 .idea/
 evaluation/results.json
+logs/
+dump.rdb

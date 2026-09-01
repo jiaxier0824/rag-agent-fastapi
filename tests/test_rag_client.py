@@ -3,27 +3,32 @@ from unittest.mock import patch
 
 import httpx
 
+from agent.cache import CachedRagResponse
 from agent.rag_client import RagApiClient
 
 
 class FakeCache:
-    def __init__(self, cached_answer: str | None = None):
-        self.cached_answer = cached_answer
-        self.saved_answer: tuple[str, str, str] | None = None
+    def __init__(self, cached_response: CachedRagResponse | None = None):
+        self.cached_response = cached_response
+        self.saved_answer: dict | None = None
 
-    def get(self, question: str, session_id: str) -> str | None:
-        return self.cached_answer
+    def get(self, question: str, session_id: str) -> CachedRagResponse | None:
+        return self.cached_response
 
-    def set(self, question: str, session_id: str, answer: str) -> None:
-        self.saved_answer = (question, session_id, answer)
+    def set(self, **kwargs) -> None:
+        self.saved_answer = kwargs
 
 
 class SuccessResponse:
     def raise_for_status(self) -> None:
         return None
 
-    def json(self) -> dict[str, str]:
-        return {"answer": "课程资料答案"}
+    def json(self) -> dict:
+        return {
+            "answer": "课程资料答案",
+            "trace_id": "rag-trace-001",
+            "sources": [{"filename": "INFS7410_outline.md"}],
+        }
 
 
 class RagApiClientTest(unittest.TestCase):
@@ -32,13 +37,22 @@ class RagApiClientTest(unittest.TestCase):
         self.session_id = "rag-client-test"
 
     def test_returns_cached_answer_without_http_request(self) -> None:
-        cache = FakeCache(cached_answer="缓存中的课程答案")
+        cache = FakeCache(
+            cached_response=CachedRagResponse(
+                answer="缓存中的课程答案",
+                sources=["cached_source.md"],
+                rag_trace_id="rag-trace-cached",
+            )
+        )
         client = RagApiClient(cache=cache, base_url="http://test")
 
         with patch("agent.rag_client.httpx.post") as mock_post:
-            answer = client.ask(self.question, self.session_id)
+            result = client.ask(self.question, self.session_id, "agent-trace-001")
 
-        self.assertEqual(answer, "缓存中的课程答案")
+        self.assertEqual(result.answer, "缓存中的课程答案")
+        self.assertEqual(result.sources, ["cached_source.md"])
+        self.assertEqual(result.rag_trace_id, "rag-trace-cached")
+        self.assertTrue(result.cache_hit)
         mock_post.assert_not_called()
 
     def test_retries_after_network_error_then_caches_answer(self) -> None:
@@ -58,13 +72,26 @@ class RagApiClientTest(unittest.TestCase):
                 SuccessResponse(),
             ],
         ) as mock_post:
-            answer = client.ask(self.question, self.session_id)
+            result = client.ask(self.question, self.session_id, "agent-trace-002")
 
-        self.assertEqual(answer, "课程资料答案")
+        self.assertEqual(result.answer, "课程资料答案")
+        self.assertEqual(result.sources, ["INFS7410_outline.md"])
+        self.assertEqual(result.rag_trace_id, "rag-trace-001")
+        self.assertFalse(result.cache_hit)
         self.assertEqual(mock_post.call_count, 2)
         self.assertEqual(
             cache.saved_answer,
-            (self.question, self.session_id, "课程资料答案"),
+            {
+                "question": self.question,
+                "session_id": self.session_id,
+                "answer": "课程资料答案",
+                "sources": ["INFS7410_outline.md"],
+                "rag_trace_id": "rag-trace-001",
+            },
+        )
+        self.assertEqual(
+            mock_post.call_args.kwargs["headers"],
+            {"X-Trace-ID": "agent-trace-002"},
         )
 
     def test_does_not_retry_for_4xx_request_error(self) -> None:
@@ -84,9 +111,10 @@ class RagApiClientTest(unittest.TestCase):
         )
 
         with patch("agent.rag_client.httpx.post", side_effect=error) as mock_post:
-            answer = client.ask(self.question, self.session_id)
+            result = client.ask(self.question, self.session_id, "agent-trace-003")
 
-        self.assertEqual(answer, "课程资料请求参数异常，请检查后重试。")
+        self.assertEqual(result.answer, "课程资料请求参数异常，请检查后重试。")
+        self.assertEqual(result.sources, [])
         self.assertEqual(mock_post.call_count, 1)
 
 

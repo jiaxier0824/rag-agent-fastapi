@@ -10,9 +10,11 @@
   - `create_study_plan`：生成并保存学习计划
   - `get_current_study_plan`：读取已有学习计划
 - Redis 问答缓存与学习计划持久化
-- `qwen3-max` 主模型，`qwen-plus` 失败降级
+- `qwen3.7-max` 主模型，`qwen3.7-plus` 失败降级
 - SSE 流式响应，实时返回“正在检索资料”等状态
 - RAG 请求重试、超时处理与调用链 `trace_id`
+- 透传 RAG V2 的来源文件与调用链，最终回答可追溯资料依据
+- Agent JSONL 调用日志：模型切换、工具、缓存、来源、耗时与 RAG 调用链
 - Docker Compose 一键启动 MySQL、Redis、RAG、Agent
 
 ## 技术栈
@@ -23,7 +25,7 @@ Python、FastAPI、LangChain、通义千问、Redis、MySQL、Chroma、Docker、
 
 前端/调用方 → FastAPI Agent → LLM 选择工具 → RAG 服务或学习计划工具 → Redis/MySQL/Chroma。
 
-RAG 服务是独立项目，Agent 通过 `RAG_API_BASE_URL` 调用它，而不是直接耦合 RAG 源码。
+RAG 服务是独立项目 `RAG_FastAPI`，Agent 通过 `RAG_API_BASE_URL` 调用它，而不是直接耦合 RAG 源码。Agent 将自己的 `X-Trace-ID` 传给 RAG；RAG 返回的 `sources` 会由 Agent 透传给调用方。
 
 ## 本地配置
 
@@ -37,9 +39,11 @@ cp .env.example .env
 
 ```env
 DASHSCOPE_API_KEY=你的百炼API密钥
+AGENT_MODEL_NAME=qwen3.7-max
+AGENT_FALLBACK_MODEL_NAME=qwen3.7-plus
 ```
 
-不要上传 `.env`。
+不要上传 `.env`。应填写归属项目业务空间的 API Key；不要使用聊天记录中已经暴露过的旧 Key。
 
 ## Docker 启动
 
@@ -81,6 +85,8 @@ POST /api/agent/chat
 }
 ```
 
+响应会返回 `answer`、`session_id`、`trace_id` 与 `sources`。流式接口的最后一个 `done` 事件同样包含来源文件与 RAG 调用链 ID。
+
 流式接口：
 
 ```http
@@ -101,14 +107,21 @@ python -B -m unittest discover -s tests -v
 python -m evaluation.run_evaluation
 ```
 
-已完成 5 道课程问题的端到端测评：
+已完成 5 道课程问题的端到端测评；报告同时统计：
 
 - 关键事实正确率：80%
 - 工具选择正确率：100%
+- RAG 来源透传正确率
 - 平均响应时间：13.176 秒
+
+单元测试还覆盖 RAG 缓存命中、网络重试、4xx 不重试、RAG 来源与 `X-Trace-ID` 透传，以及 SSE 状态顺序。GitHub Actions 在无 API Key 的环境中自动运行这些测试。
+
+## 调用链日志
+
+每次 Agent 请求会向 `logs/agent_requests.jsonl` 追加一行 JSON，记录：Agent `trace_id`、同步或流式模式、实际模型、是否降级、调用工具、RAG 缓存命中、RAG trace、来源与总耗时。日志不记录 API Key、用户问题正文或回答正文。
 
 ## 后续迭代
 
-- 优化 RAG 召回与重排序，解决截止日期类问题的漏检索
-- 增加用户记忆与更多外部工具
-- 增加 Web 前端和可视化调用链
+- 增加更多真实业务工具或 MCP 扩展
+- 增加鉴权、限流与多用户隔离
+- 视业务需要增加异步队列与可视化运维面板

@@ -48,6 +48,15 @@ def evaluate_case(
         for event in events
         if event["type"] == "status"
     ]
+    metadata = next(
+        (
+            event
+            for event in events
+            if event["type"] == "metadata"
+        ),
+        {"sources": []},
+    )
+    sources = metadata["sources"]
 
     normalized_answer = normalize_text(answer)
     keyword_correct = all(
@@ -55,6 +64,8 @@ def evaluate_case(
         for keyword in case["expected_keywords"]
     )
     tool_correct = case["expected_status"] in statuses
+    expected_sources = case.get("expected_sources", [])
+    source_correct = all(source in sources for source in expected_sources)
 
     return {
         "id": case["id"],
@@ -63,6 +74,8 @@ def evaluate_case(
         "statuses": statuses,
         "keyword_correct": keyword_correct,
         "tool_correct": tool_correct,
+        "sources": sources,
+        "source_correct": source_correct,
         "elapsed_seconds": elapsed_seconds,
         "trace_id": trace_id,
     }
@@ -72,6 +85,7 @@ def build_report(results: list[dict]) -> dict:
     total_cases = len(results)
     keyword_correct_cases = sum(result["keyword_correct"] for result in results)
     tool_correct_cases = sum(result["tool_correct"] for result in results)
+    source_correct_cases = sum(result["source_correct"] for result in results)
     average_latency_seconds = round(
         sum(result["elapsed_seconds"] for result in results) / total_cases,
         3,
@@ -82,6 +96,7 @@ def build_report(results: list[dict]) -> dict:
             "total_cases": total_cases,
             "keyword_accuracy": round(keyword_correct_cases / total_cases, 3) if total_cases else 0.0,
             "tool_selection_accuracy": round(tool_correct_cases / total_cases, 3) if total_cases else 0.0,
+            "source_attribution_accuracy": round(source_correct_cases / total_cases, 3) if total_cases else 0.0,
             "average_latency_seconds": average_latency_seconds,
         },
         "results": results,
@@ -107,6 +122,7 @@ def main() -> None:
     print(f"题目数量：{summary['total_cases']}")
     print(f"关键事实正确率：{summary['keyword_accuracy']:.1%}")
     print(f"工具选择正确率：{summary['tool_selection_accuracy']:.1%}")
+    print(f"来源透传正确率：{summary['source_attribution_accuracy']:.1%}")
     print(f"平均响应时间：{summary['average_latency_seconds']} 秒")
     print(f"详细结果：{RESULTS_PATH}")
 

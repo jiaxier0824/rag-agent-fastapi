@@ -10,6 +10,7 @@ class AgentStreamTest(unittest.TestCase):
         service.fallback_model = "fallback-model"
         service.model_name = "primary-model"
         service.fallback_model_name = "fallback-model"
+        service.trace_logger = None
         return service
 
     def test_streams_tool_status_before_content(self) -> None:
@@ -21,10 +22,17 @@ class AgentStreamTest(unittest.TestCase):
             question,
             session_id,
             trace_id,
+            execution_context,
             on_status=None,
         ):
             self.assertEqual(model, "primary-model")
             self.assertIsNotNone(on_status)
+            execution_context.record_tool("search_course_knowledge")
+            execution_context.record_rag_result(
+                sources=["INFS7410_outline.md"],
+                rag_trace_id="rag-trace-stream",
+                cache_hit=False,
+            )
             on_status("正在检索课程资料")
             yield "课程资料显示，"
             yield "作业截止日期是 9 月 4 日。"
@@ -47,6 +55,12 @@ class AgentStreamTest(unittest.TestCase):
                 {"type": "status", "content": "正在生成回答"},
                 {"type": "content", "content": "课程资料显示，"},
                 {"type": "content", "content": "作业截止日期是 9 月 4 日。"},
+                {
+                    "type": "metadata",
+                    "content": "",
+                    "sources": ["INFS7410_outline.md"],
+                    "rag_trace_ids": ["rag-trace-stream"],
+                },
             ],
         )
 

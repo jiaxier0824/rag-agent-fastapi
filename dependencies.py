@@ -1,6 +1,7 @@
 from functools import lru_cache
 
 from agent.cache import RagCache
+from agent.observability import AgentTraceLogger
 from agent.rag_client import RagApiClient
 from agent.service import AgentService
 from agent.study_plan_store import StudyPlanStore
@@ -24,8 +25,16 @@ def get_rag_api_client() -> RagApiClient:
 
 
 @lru_cache
+def get_agent_trace_logger() -> AgentTraceLogger:
+    from config.settings import settings
+
+    return AgentTraceLogger(settings.agent_observability_log_path)
+
+
+@lru_cache
 def get_agent_service() -> AgentService:
     return AgentService(
         rag_client=get_rag_api_client(),
         study_plan_store=get_study_plan_store(),
+        trace_logger=get_agent_trace_logger(),
     )

@@ -1,11 +1,20 @@
 import hashlib
+import json
 import logging
+from dataclasses import dataclass
 
 import redis
 
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class CachedRagResponse:
+    answer: str
+    sources: list[str]
+    rag_trace_id: str | None
 
 class RagCache:
     def __init__(
@@ -24,23 +33,37 @@ class RagCache:
             self,
             question: str,
             session_id: str,
-    ) -> str | None:
+    ) -> CachedRagResponse | None:
         cache_key = self._build_cache_key(
             question=question,
             session_id=session_id,
         )
 
         try:
-            return self.redis_client.get(cache_key)
+            value = self.redis_client.get(cache_key)
+            if value is None:
+                return None
+
+            payload = json.loads(value)
+            return CachedRagResponse(
+                answer=payload["answer"],
+                sources=payload.get("sources", []),
+                rag_trace_id=payload.get("rag_trace_id"),
+            )
+        except (json.JSONDecodeError, KeyError, TypeError):
+            logger.warning("Redis 缓存格式过期，本次跳过缓存。")
+            return None
         except redis.RedisError:
             logger.warning("Redis 读取失败，本次跳过缓存。")
             return None
 
     def set(
             self,
-            question: str,
-            session_id: str,
-            answer: str,
+        question: str,
+        session_id: str,
+        answer: str,
+        sources: list[str],
+        rag_trace_id: str | None,
     ) -> None:
         cache_key = self._build_cache_key(
             question=question,
@@ -51,7 +74,14 @@ class RagCache:
             self.redis_client.setex(
                 cache_key,
                 self.ttl_seconds,
-                answer,
+                json.dumps(
+                    {
+                        "answer": answer,
+                        "sources": sources,
+                        "rag_trace_id": rag_trace_id,
+                    },
+                    ensure_ascii=False,
+                ),
             )
         except redis.RedisError:
             logger.warning("Redis 写入失败，本次跳过缓存。")

@@ -4,6 +4,7 @@ from collections.abc import Callable
 from langchain_core.tools import tool
 
 from agent.rag_client import RagApiClient
+from agent.execution import AgentExecutionContext
 from agent.study_plan import build_study_plan
 from agent.study_plan_store import StudyPlanStore
 
@@ -16,6 +17,7 @@ def build_tools(
     session_id: str,
     trace_id: str,
     study_plan_store: StudyPlanStore,
+    execution_context: AgentExecutionContext,
     on_status: Callable[[str], None] | None = None,
 ):
     def emit_status(content: str) -> None:
@@ -30,6 +32,7 @@ def build_tools(
     )
     def search_course_knowledge(question: str) -> str:
         emit_status("正在检索课程资料")
+        execution_context.record_tool("search_course_knowledge")
         logger.info(
             "调用课程资料工具：trace_id=%s, session_id=%s, question=%s",
             trace_id,
@@ -37,9 +40,15 @@ def build_tools(
             question,
         )
 
-        answer = rag_client.ask(
+        result = rag_client.ask(
             question=question,
             session_id=session_id,
+            trace_id=trace_id,
+        )
+        execution_context.record_rag_result(
+            sources=result.sources,
+            rag_trace_id=result.rag_trace_id,
+            cache_hit=result.cache_hit,
         )
 
         logger.info(
@@ -48,7 +57,7 @@ def build_tools(
             session_id,
         )
 
-        return answer
+        return result.answer
 
     @tool(
         description=(
@@ -62,6 +71,7 @@ def build_tools(
         daily_study_hours: float = 2.0,
     ) -> str:
         emit_status("正在生成并保存学习计划")
+        execution_context.record_tool("create_study_plan")
         logger.info(
             "调用学习计划工具：trace_id=%s, session_id=%s",
             trace_id,
@@ -95,6 +105,7 @@ def build_tools(
     )
     def get_current_study_plan() -> str:
         emit_status("正在读取已保存的学习计划")
+        execution_context.record_tool("get_current_study_plan")
         logger.info(
             "读取学习计划：trace_id=%s, session_id=%s",
             trace_id,
