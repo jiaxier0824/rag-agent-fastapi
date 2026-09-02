@@ -17,6 +17,8 @@ class RagQueryResult:
     sources: list[str]
     rag_trace_id: str | None
     cache_hit: bool
+    success: bool = True
+    error_code: str | None = None
 
 
 class RagApiClient:
@@ -113,6 +115,8 @@ class RagApiClient:
                         sources=[],
                         rag_trace_id=None,
                         cache_hit=False,
+                        success=False,
+                        error_code="RAG_REQUEST_INVALID",
                     )
 
                 error_message = "课程资料服务返回异常，请稍后重试。"
@@ -133,6 +137,8 @@ class RagApiClient:
                     sources=[],
                     rag_trace_id=None,
                     cache_hit=False,
+                    success=False,
+                    error_code="RAG_RESPONSE_INVALID",
                 )
 
             if attempt == self.max_retries:
@@ -146,6 +152,8 @@ class RagApiClient:
                     sources=[],
                     rag_trace_id=None,
                     cache_hit=False,
+                    success=False,
+                    error_code="RAG_UNAVAILABLE",
                 )
 
             wait_seconds = self.retry_interval_seconds * (attempt + 1)

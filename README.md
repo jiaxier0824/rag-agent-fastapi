@@ -1,20 +1,22 @@
 # RAG Agent FastAPI
 
-一个基于 FastAPI 的课程资料智能问答 Agent。它把已有 RAG 服务封装为可调用工具，并支持学习计划、Redis 缓存、多模型降级与 SSE 流式输出。
+一个基于 FastAPI 的课程资料智能问答 Agent。它把独立 RAG 服务封装为可调用工具，并支持可控记忆、多课程学习计划、工具保护、多模型降级与 SSE 流式输出。
 
 ## 核心能力
 
 - 通过 HTTP 调用独立部署的 RAG 服务检索课程资料
 - Agent 自动选择工具：
   - `search_course_knowledge`：检索课程资料
-  - `create_study_plan`：生成并保存学习计划
-  - `get_current_study_plan`：读取已有学习计划
-- Redis 问答缓存与学习计划持久化
+  - `create_or_update_study_plan`：按课程创建或更新学习计划
+  - `get_study_plan` / `list_study_plans`：读取指定课程计划或计划列表
+  - `save_learning_preferences`：仅保存用户明确表达的稳定学习偏好
+- Redis 问答缓存、短期会话记忆、显式偏好与多课程计划持久化
+- 请求级工具保护：参数校验、重复工具调用拦截、最大调用次数限制、结构化成功/失败结果
 - `qwen3.7-max` 主模型，`qwen3.7-plus` 失败降级
 - SSE 流式响应，实时返回“正在检索资料”等状态
 - RAG 请求重试、超时处理与调用链 `trace_id`
 - 透传 RAG V2 的来源文件与调用链，最终回答可追溯资料依据
-- Agent JSONL 调用日志：模型切换、工具、缓存、来源、耗时与 RAG 调用链
+- Agent JSONL 调用日志：模型切换、工具/拦截记录、记忆加载、缓存、来源、耗时与 RAG 调用链
 - Docker Compose 一键启动 MySQL、Redis、RAG、Agent
 
 ## 技术栈
@@ -41,6 +43,8 @@ cp .env.example .env
 DASHSCOPE_API_KEY=你的百炼API密钥
 AGENT_MODEL_NAME=qwen3.7-max
 AGENT_FALLBACK_MODEL_NAME=qwen3.7-plus
+AGENT_SHORT_MEMORY_MAX_TURNS=4
+AGENT_MAX_TOOL_CALLS=6
 ```
 
 不要上传 `.env`。应填写归属项目业务空间的 API Key；不要使用聊天记录中已经暴露过的旧 Key。
@@ -107,7 +111,7 @@ python -B -m unittest discover -s tests -v
 python -m evaluation.run_evaluation
 ```
 
-已完成 5 道课程问题的端到端测评；报告同时统计：
+课程资料端到端测评覆盖关键事实、工具选择、来源透传与延迟；V3 还通过离线单测覆盖多课程隔离、显式偏好记忆和重复工具调用保护。报告同时统计：
 
 - 关键事实正确率：80%
 - 工具选择正确率：100%
@@ -118,10 +122,10 @@ python -m evaluation.run_evaluation
 
 ## 调用链日志
 
-每次 Agent 请求会向 `logs/agent_requests.jsonl` 追加一行 JSON，记录：Agent `trace_id`、同步或流式模式、实际模型、是否降级、调用工具、RAG 缓存命中、RAG trace、来源与总耗时。日志不记录 API Key、用户问题正文或回答正文。
+每次 Agent 请求会向 `logs/agent_requests.jsonl` 追加一行 JSON，记录：Agent `trace_id`、同步或流式模式、实际模型、是否降级、调用工具、拦截记录、记忆是否加载、RAG 缓存命中、RAG trace、来源与总耗时。日志不记录 API Key、用户问题正文或回答正文。
 
 ## 后续迭代
 
-- 增加更多真实业务工具或 MCP 扩展
+- 通过人工标注用例继续扩展工具选择、两步工具链和记忆命中测评
 - 增加鉴权、限流与多用户隔离
 - 视业务需要增加异步队列与可视化运维面板

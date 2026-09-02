@@ -48,6 +48,8 @@ def stream_chat_with_agent(
     def event_generator() -> Iterator[str]:
         sources: list[str] = []
         rag_trace_ids: list[str] = []
+        tools_called: list[str] = []
+        blocked_tool_calls: list[dict[str, str]] = []
 
         for event in agent_service.stream_execute(
             question=request.question,
@@ -57,6 +59,8 @@ def stream_chat_with_agent(
             if event["type"] == "metadata":
                 sources = event.get("sources", [])
                 rag_trace_ids = event.get("rag_trace_ids", [])
+                tools_called = event.get("tools_called", [])
+                blocked_tool_calls = event.get("blocked_tool_calls", [])
                 continue
 
             data = {
@@ -81,6 +85,8 @@ def stream_chat_with_agent(
                 for filename in sources
             ],
             "rag_trace_ids": rag_trace_ids,
+            "tools_called": tools_called,
+            "blocked_tool_calls": blocked_tool_calls,
         }
 
         yield (

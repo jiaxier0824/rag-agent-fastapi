@@ -54,7 +54,7 @@ def evaluate_case(
             for event in events
             if event["type"] == "metadata"
         ),
-        {"sources": []},
+        {"sources": [], "tools_called": [], "blocked_tool_calls": []},
     )
     sources = metadata["sources"]
 
@@ -63,7 +63,12 @@ def evaluate_case(
         normalize_text(keyword) in normalized_answer
         for keyword in case["expected_keywords"]
     )
-    tool_correct = case["expected_status"] in statuses
+    expected_tools = case.get("expected_tools", [])
+    tools_called = metadata.get("tools_called", [])
+    tool_correct = (
+        case["expected_status"] in statuses
+        and all(tool_name in tools_called for tool_name in expected_tools)
+    )
     expected_sources = case.get("expected_sources", [])
     source_correct = all(source in sources for source in expected_sources)
 
@@ -74,6 +79,10 @@ def evaluate_case(
         "statuses": statuses,
         "keyword_correct": keyword_correct,
         "tool_correct": tool_correct,
+        "tools_called": tools_called,
+        "blocked_tool_calls": metadata.get("blocked_tool_calls", []),
+        "short_memory_turns_loaded": metadata.get("short_memory_turns_loaded", 0),
+        "profile_memory_loaded": metadata.get("profile_memory_loaded", False),
         "sources": sources,
         "source_correct": source_correct,
         "elapsed_seconds": elapsed_seconds,

@@ -21,5 +21,9 @@ class Settings(BaseSettings):
     rag_cache_ttl_seconds: int = 300
 
     study_plan_ttl_seconds: int = 2_592_000
+    agent_short_memory_ttl_seconds: int = 604_800
+    agent_short_memory_max_turns: int = 4
+    agent_profile_ttl_seconds: int = 7_776_000
+    agent_max_tool_calls: int = 6
 
 settings = Settings()

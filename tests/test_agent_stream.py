@@ -60,6 +60,10 @@ class AgentStreamTest(unittest.TestCase):
                     "content": "",
                     "sources": ["INFS7410_outline.md"],
                     "rag_trace_ids": ["rag-trace-stream"],
+                    "tools_called": ["search_course_knowledge"],
+                    "blocked_tool_calls": [],
+                    "short_memory_turns_loaded": 0,
+                    "profile_memory_loaded": False,
                 },
             ],
         )

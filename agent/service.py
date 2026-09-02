@@ -9,6 +9,7 @@ from langchain_community.chat_models.tongyi import ChatTongyi
 
 from agent.rag_client import RagApiClient
 from agent.execution import AgentExecutionContext, AgentExecutionResult
+from agent.memory import AgentMemoryStore
 from agent.observability import AgentTraceLogger
 from agent.tools import build_tools
 from config.settings import settings
@@ -20,12 +21,14 @@ class AgentService:
         self,
         rag_client: RagApiClient,
         study_plan_store: StudyPlanStore,
+        memory_store: AgentMemoryStore,
         trace_logger: AgentTraceLogger | None = None,
         model_name: str = settings.agent_model_name,
         fallback_model_name: str = settings.agent_fallback_model_name,
     ):
         self.rag_client = rag_client
         self.study_plan_store = study_plan_store
+        self.memory_store = memory_store
         self.model_name = model_name
         self.fallback_model_name = fallback_model_name
         self.trace_logger = trace_logger
@@ -50,6 +53,7 @@ class AgentService:
                 session_id=session_id,
                 trace_id=trace_id,
                 study_plan_store=self.study_plan_store,
+                memory_store=self.memory_store,
                 execution_context=execution_context,
                 on_status=on_status,
             ),
@@ -58,11 +62,16 @@ class AgentService:
                 "涉及课程、作业、截止日期或上传资料的事实问题时，"
                 "必须调用 search_course_knowledge。"
                 "当用户要求生成学习计划时，如果任务或截止日期需要从课程资料确认，"
-                "先调用 search_course_knowledge，再调用 create_study_plan。"
-                "调用 create_study_plan 时，deadline 必须使用 YYYY-MM-DD 格式。"
+                "先调用 search_course_knowledge，再调用 create_or_update_study_plan。"
+                "调用 create_or_update_study_plan 时，必须提供 course_id，"
+                "deadline 必须使用 YYYY-MM-DD 格式。"
                 "不要编造工具没有返回的课程信息。"
-                "当用户询问当前、之前或已保存的学习计划时，"
-                "必须调用 get_current_study_plan。"
+                "当课程资料工具返回 ok=false 时，明确说明资料不可用，不要补写事实。"
+                "当用户询问某课程已保存计划时调用 get_study_plan；"
+                "不确定有哪些计划时调用 list_study_plans。"
+                "仅当用户明确表达长期学习偏好时调用 save_learning_preferences。"
+                "工具返回 DUPLICATE_TOOL_CALL 或 TOOL_CALL_LIMIT_EXCEEDED 后，"
+                "不要再次调用同一工具，应向用户说明限制。"
             ),
         )
 
@@ -81,14 +90,8 @@ class AgentService:
             execution_context=execution_context,
         )
         result = agent.invoke(
-            {
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": question,
-                    }
-                ]
-            }
+            {"messages": self._build_messages(question, session_id, execution_context)},
+            config={"recursion_limit": settings.agent_max_tool_calls * 2 + 4},
         )
         return result["messages"][-1].content
 
@@ -98,7 +101,7 @@ class AgentService:
         session_id: str,
         trace_id: str,
     ) -> AgentExecutionResult:
-        execution_context = AgentExecutionContext()
+        execution_context = AgentExecutionContext(max_tool_calls=settings.agent_max_tool_calls)
         started_at = perf_counter()
         degraded = False
         model_used = self.model_name
@@ -148,6 +151,9 @@ class AgentService:
                     rag_cache_hit=execution_context.rag_cache_hit,
                     model_used=model_used,
                     degraded=degraded,
+                    blocked_tool_calls=execution_context.blocked_tool_calls,
+                    short_memory_turns_loaded=execution_context.short_memory_turns_loaded,
+                    profile_memory_loaded=execution_context.profile_memory_loaded,
                 )
                 self._write_trace(
                     trace_id=trace_id,
@@ -173,7 +179,11 @@ class AgentService:
             rag_cache_hit=execution_context.rag_cache_hit,
             model_used=model_used,
             degraded=degraded,
+            blocked_tool_calls=execution_context.blocked_tool_calls,
+            short_memory_turns_loaded=execution_context.short_memory_turns_loaded,
+            profile_memory_loaded=execution_context.profile_memory_loaded,
         )
+        self._persist_short_memory(session_id=session_id, question=question, answer=answer)
         self._write_trace(
             trace_id=trace_id,
             session_id=session_id,
@@ -190,7 +200,7 @@ class AgentService:
         session_id: str,
         trace_id: str,
     ) -> Iterator[dict[str, object]]:
-        execution_context = AgentExecutionContext()
+        execution_context = AgentExecutionContext(max_tool_calls=settings.agent_max_tool_calls)
         started_at = perf_counter()
         model_used = self.model_name
         degraded = False
@@ -207,6 +217,7 @@ class AgentService:
         }
 
         has_emitted_content = False
+        answer_parts: list[str] = []
 
         try:
             for event in self._stream_model_events(
@@ -222,6 +233,9 @@ class AgentService:
                         "content": "正在生成回答",
                     }
                     has_emitted_content = True
+
+                if event["type"] == "content":
+                    answer_parts.append(str(event["content"]))
 
                 yield event
 
@@ -275,6 +289,8 @@ class AgentService:
                     trace_id=trace_id,
                     execution_context=execution_context,
                 ):
+                    if event["type"] == "content":
+                        answer_parts.append(str(event["content"]))
                     yield event
             except Exception:
                 logger.exception(
@@ -301,6 +317,11 @@ class AgentService:
             "Agent 流式处理完成：trace_id=%s, session_id=%s",
             trace_id,
             session_id,
+        )
+        self._persist_short_memory(
+            session_id=session_id,
+            question=question,
+            answer="".join(answer_parts),
         )
         self._write_stream_trace(
             trace_id=trace_id,
@@ -331,14 +352,8 @@ class AgentService:
         )
 
         for message, metadata in agent.stream(
-            {
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": question,
-                    }
-                ]
-            },
+            {"messages": self._build_messages(question, session_id, execution_context)},
+            config={"recursion_limit": settings.agent_max_tool_calls * 2 + 4},
             stream_mode="messages",
         ):
 
@@ -405,6 +420,10 @@ class AgentService:
             "content": "",
             "sources": execution_context.sources,
             "rag_trace_ids": execution_context.rag_trace_ids,
+            "tools_called": execution_context.tools_called,
+            "blocked_tool_calls": execution_context.blocked_tool_calls,
+            "short_memory_turns_loaded": execution_context.short_memory_turns_loaded,
+            "profile_memory_loaded": execution_context.profile_memory_loaded,
         }
 
     def _write_stream_trace(
@@ -426,6 +445,9 @@ class AgentService:
             rag_cache_hit=execution_context.rag_cache_hit,
             model_used=model_used,
             degraded=degraded,
+            blocked_tool_calls=execution_context.blocked_tool_calls,
+            short_memory_turns_loaded=execution_context.short_memory_turns_loaded,
+            profile_memory_loaded=execution_context.profile_memory_loaded,
         )
         self._write_trace(
             trace_id=trace_id,
@@ -461,6 +483,42 @@ class AgentService:
                 "rag_cache_hit": result.rag_cache_hit,
                 "rag_trace_ids": result.rag_trace_ids,
                 "sources": result.sources,
+                "blocked_tool_calls": result.blocked_tool_calls,
+                "short_memory_turns_loaded": result.short_memory_turns_loaded,
+                "profile_memory_loaded": result.profile_memory_loaded,
                 "total_ms": elapsed_ms,
             }
         )
+
+    def _build_messages(
+        self,
+        question: str,
+        session_id: str,
+        execution_context: AgentExecutionContext,
+    ) -> list[dict[str, str]]:
+        """将可控的最近对话和显式偏好作为本次模型输入。"""
+        memory_store = getattr(self, "memory_store", None)
+        if memory_store is None:
+            short_memory: list[dict[str, str]] = []
+            profile: dict[str, str] = {}
+        else:
+            short_memory = memory_store.get_recent_messages(session_id=session_id)
+            profile = memory_store.get_profile(session_id=session_id)
+        execution_context.record_memory(
+            short_memory_turns=len(short_memory) // 2,
+            profile_loaded=bool(profile),
+        )
+        messages: list[dict[str, str]] = []
+        if profile:
+            preferences = "；".join(f"{key}={value}" for key, value in profile.items())
+            messages.append({"role": "system", "content": f"用户明确保存的学习偏好：{preferences}。"})
+        messages.extend(short_memory)
+        messages.append({"role": "user", "content": question})
+        return messages
+
+    def _persist_short_memory(self, *, session_id: str, question: str, answer: str) -> None:
+        if not answer.strip():
+            return
+        memory_store = getattr(self, "memory_store", None)
+        if memory_store is not None:
+            memory_store.append_turn(session_id=session_id, question=question, answer=answer)
