@@ -45,6 +45,7 @@ class AgentService:
         model: ChatTongyi,
         execution_context: AgentExecutionContext,
         on_status: Callable[[str], None] | None = None,
+        cache_question: str | None = None,
     ):
         return create_agent(
             model=model,
@@ -56,6 +57,7 @@ class AgentService:
                 memory_store=self.memory_store,
                 execution_context=execution_context,
                 on_status=on_status,
+                cache_question=cache_question,
             ),
             system_prompt=(
                 "你是 UQ 学习助手。"
@@ -88,6 +90,7 @@ class AgentService:
             trace_id=trace_id,
             model=model,
             execution_context=execution_context,
+            cache_question=question,
         )
         result = agent.invoke(
             {"messages": self._build_messages(question, session_id, execution_context)},
@@ -105,6 +108,38 @@ class AgentService:
         started_at = perf_counter()
         degraded = False
         model_used = self.model_name
+        cached_result = self._get_cached_rag_result(
+            question=question,
+            session_id=session_id,
+        )
+        if cached_result is not None:
+            execution_context.record_tool("search_course_knowledge")
+            execution_context.record_rag_result(
+                sources=cached_result.sources,
+                rag_trace_id=cached_result.rag_trace_id,
+                cache_hit=True,
+            )
+            result = AgentExecutionResult(
+                answer=cached_result.answer,
+                sources=execution_context.sources,
+                rag_trace_ids=execution_context.rag_trace_ids,
+                tools_called=execution_context.tools_called,
+                rag_cache_hit=True,
+                model_used="cache",
+                degraded=False,
+                blocked_tool_calls=[],
+                short_memory_turns_loaded=0,
+                profile_memory_loaded=False,
+            )
+            self._write_trace(
+                trace_id=trace_id,
+                session_id=session_id,
+                mode="sync",
+                result=result,
+                elapsed_ms=round((perf_counter() - started_at) * 1000, 2),
+                success=True,
+            )
+            return result
         logger.info(
             "Agent 使用主模型开始处理：model=%s, trace_id=%s, session_id=%s",
             self.model_name,
@@ -204,6 +239,30 @@ class AgentService:
         started_at = perf_counter()
         model_used = self.model_name
         degraded = False
+        cached_result = self._get_cached_rag_result(
+            question=question,
+            session_id=session_id,
+        )
+        if cached_result is not None:
+            execution_context.record_tool("search_course_knowledge")
+            execution_context.record_rag_result(
+                sources=cached_result.sources,
+                rag_trace_id=cached_result.rag_trace_id,
+                cache_hit=True,
+            )
+            yield {"type": "status", "content": "已命中课程资料缓存"}
+            yield {"type": "content", "content": cached_result.answer}
+            self._write_stream_trace(
+                trace_id=trace_id,
+                session_id=session_id,
+                execution_context=execution_context,
+                model_used="cache",
+                degraded=False,
+                started_at=started_at,
+                success=True,
+            )
+            yield self._metadata_event(execution_context)
+            return
         logger.info(
             "Agent 使用主模型开始流式处理：model=%s, trace_id=%s, session_id=%s",
             self.model_name,
@@ -349,6 +408,7 @@ class AgentService:
             execution_context=execution_context,
             model=model,
             on_status=on_status,
+            cache_question=question,
         )
 
         for message, metadata in agent.stream(
@@ -425,6 +485,19 @@ class AgentService:
             "short_memory_turns_loaded": execution_context.short_memory_turns_loaded,
             "profile_memory_loaded": execution_context.profile_memory_loaded,
         }
+
+    def _get_cached_rag_result(
+        self,
+        *,
+        question: str,
+        session_id: str,
+    ):
+        """读取与用户原始问题绑定的缓存；测试替身可不提供此能力。"""
+        rag_client = getattr(self, "rag_client", None)
+        get_cached = getattr(rag_client, "get_cached", None)
+        if get_cached is None:
+            return None
+        return get_cached(question=question, session_id=session_id)
 
     def _write_stream_trace(
         self,

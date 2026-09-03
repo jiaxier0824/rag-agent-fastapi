@@ -2,8 +2,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    agent_model_name: str = "qwen3.7-max"
-    agent_fallback_model_name: str = "qwen3.7-plus"
+    agent_model_name: str = "qwen-turbo"
+    agent_fallback_model_name: str = "qwen-plus"
 
     rag_api_base_url: str = "http://127.0.0.1:8000"
     rag_api_timeout_seconds: float = 30.0

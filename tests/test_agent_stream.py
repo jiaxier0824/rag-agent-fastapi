@@ -1,9 +1,43 @@
 import unittest
 
+from agent.rag_client import RagQueryResult
 from agent.service import AgentService
 
 
 class AgentStreamTest(unittest.TestCase):
+    def test_stream_returns_cached_answer_without_starting_model_thread(self) -> None:
+        service = self._build_service()
+
+        class CachedRagClient:
+            @staticmethod
+            def get_cached(**_kwargs):
+                return RagQueryResult(
+                    answer="缓存中的流式课程答案",
+                    sources=["INFS7410_outline.md"],
+                    rag_trace_id="cached-stream-trace",
+                    cache_hit=True,
+                )
+
+        service.rag_client = CachedRagClient()
+
+        def must_not_stream(**_kwargs):
+            self.fail("缓存命中后不应启动模型流")
+
+        service._stream_agent = must_not_stream
+
+        events = list(
+            service.stream_execute(
+                question="作业什么时候截止？",
+                session_id="stream-test",
+                trace_id="trace-stream-cache-hit",
+            )
+        )
+
+        self.assertEqual(events[0], {"type": "status", "content": "已命中课程资料缓存"})
+        self.assertEqual(events[1], {"type": "content", "content": "缓存中的流式课程答案"})
+        self.assertEqual(events[2]["type"], "metadata")
+        self.assertEqual(events[2]["sources"], ["INFS7410_outline.md"])
+
     def _build_service(self) -> AgentService:
         service = object.__new__(AgentService)
         service.model = "primary-model"

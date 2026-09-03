@@ -41,23 +41,18 @@ class RagApiClient:
         question: str,
         session_id: str,
         trace_id: str,
+        cache_question: str | None = None,
     ) -> RagQueryResult:
-        cached_answer = self.cache.get(
-            question=question,
+        # Agent 可能把用户问题改写后再作为工具参数传入。缓存必须始终以 Router
+        # 收到的原始问题建键，否则同一个用户问题会生成不同 key 而无法命中。
+        cache_question = cache_question or question
+        cached_result = self.get_cached(
+            question=cache_question,
             session_id=session_id,
         )
 
-        if cached_answer is not None:
-            logger.info(
-                "RAG 缓存命中：session_id=%s",
-                session_id,
-            )
-            return RagQueryResult(
-                answer=cached_answer.answer,
-                sources=cached_answer.sources,
-                rag_trace_id=cached_answer.rag_trace_id,
-                cache_hit=True,
-            )
+        if cached_result is not None:
+            return cached_result
 
         logger.info(
             "RAG 缓存未命中：session_id=%s",
@@ -87,7 +82,7 @@ class RagApiClient:
                 rag_trace_id = data.get("trace_id")
 
                 self.cache.set(
-                    question=question,
+                    question=cache_question,
                     session_id=session_id,
                     answer=answer,
                     sources=sources,
@@ -167,3 +162,28 @@ class RagApiClient:
             )
 
             sleep(wait_seconds)
+
+    def get_cached(
+        self,
+        question: str,
+        session_id: str,
+    ) -> RagQueryResult | None:
+        """只读取缓存，不会回退到 HTTP 调用。
+
+        Agent Service 在模型调用前使用此方法：命中时可直接返回，避免“先等模型
+        决策、再发现已有答案”的无效等待。
+        """
+        cached_answer = self.cache.get(
+            question=question,
+            session_id=session_id,
+        )
+        if cached_answer is None:
+            return None
+
+        logger.info("RAG 缓存命中：session_id=%s", session_id)
+        return RagQueryResult(
+            answer=cached_answer.answer,
+            sources=cached_answer.sources,
+            rag_trace_id=cached_answer.rag_trace_id,
+            cache_hit=True,
+        )

@@ -1,5 +1,6 @@
 import unittest
 
+from agent.rag_client import RagQueryResult
 from agent.service import AgentService
 
 
@@ -12,6 +13,45 @@ class FakeTraceLogger:
 
 
 class AgentExecutionTest(unittest.TestCase):
+    def test_execute_returns_cached_rag_result_without_invoking_model(self) -> None:
+        service = object.__new__(AgentService)
+        service.model = "primary-model"
+        service.fallback_model = "fallback-model"
+        service.model_name = "primary-model"
+        service.fallback_model_name = "fallback-model"
+        service.trace_logger = FakeTraceLogger()
+
+        class CachedRagClient:
+            @staticmethod
+            def get_cached(*, question, session_id):
+                self.assertEqual(question, "课程作业怎么计分？")
+                self.assertEqual(session_id, "agent-test")
+                return RagQueryResult(
+                    answer="缓存中的课程答案",
+                    sources=["INFS7410_outline.md"],
+                    rag_trace_id="cached-rag-trace",
+                    cache_hit=True,
+                )
+
+        service.rag_client = CachedRagClient()
+
+        def must_not_invoke(**_kwargs):
+            self.fail("缓存命中后不应调用 Agent 模型")
+
+        service._invoke_agent = must_not_invoke
+
+        result = service.execute(
+            question="课程作业怎么计分？",
+            session_id="agent-test",
+            trace_id="agent-trace-cache-hit",
+        )
+
+        self.assertEqual(result.answer, "缓存中的课程答案")
+        self.assertTrue(result.rag_cache_hit)
+        self.assertEqual(result.model_used, "cache")
+        self.assertEqual(result.tools_called, ["search_course_knowledge"])
+        self.assertEqual(service.trace_logger.events[0]["model_used"], "cache")
+
     def test_execute_returns_rag_sources_and_writes_trace(self) -> None:
         service = object.__new__(AgentService)
         service.model = "primary-model"

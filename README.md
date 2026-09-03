@@ -10,9 +10,9 @@
   - `create_or_update_study_plan`：按课程创建或更新学习计划
   - `get_study_plan` / `list_study_plans`：读取指定课程计划或计划列表
   - `save_learning_preferences`：仅保存用户明确表达的稳定学习偏好
-- Redis 问答缓存、短期会话记忆、显式偏好与多课程计划持久化
+- Redis 入口问答缓存、短期会话记忆、显式偏好与多课程计划持久化；相同问题命中缓存时跳过 Agent 与 RAG 调用
 - 请求级工具保护：参数校验、重复工具调用拦截、最大调用次数限制、结构化成功/失败结果
-- `qwen3.7-max` 主模型，`qwen3.7-plus` 失败降级
+- `qwen-turbo` 主模型，`qwen-plus` 失败降级
 - SSE 流式响应，实时返回“正在检索资料”等状态
 - RAG 请求重试、超时处理与调用链 `trace_id`
 - 透传 RAG V2 的来源文件与调用链，最终回答可追溯资料依据
@@ -41,8 +41,8 @@ cp .env.example .env
 
 ```env
 DASHSCOPE_API_KEY=你的百炼API密钥
-AGENT_MODEL_NAME=qwen3.7-max
-AGENT_FALLBACK_MODEL_NAME=qwen3.7-plus
+AGENT_MODEL_NAME=qwen-turbo
+AGENT_FALLBACK_MODEL_NAME=qwen-plus
 AGENT_SHORT_MEMORY_MAX_TURNS=4
 AGENT_MAX_TOOL_CALLS=6
 ```
@@ -111,12 +111,9 @@ python -B -m unittest discover -s tests -v
 python -m evaluation.run_evaluation
 ```
 
-课程资料端到端测评覆盖关键事实、工具选择、来源透传与延迟；V3 还通过离线单测覆盖多课程隔离、显式偏好记忆和重复工具调用保护。报告同时统计：
+课程资料端到端测评覆盖来源命中、响应时延与缓存效果；V3 还通过离线单测覆盖多课程隔离、显式偏好记忆、重复工具调用保护和缓存短路。脱敏的真实集成测试摘要见 [docs/INTEGRATION_TEST_RESULTS.md](docs/INTEGRATION_TEST_RESULTS.md)。
 
-- 关键事实正确率：80%
-- 工具选择正确率：100%
-- RAG 来源透传正确率
-- 平均响应时间：13.176 秒
+最终配置下，15 道跨课程首次问答的 HTTP 成功率为 100%，来源命中率为 93.33%，平均响应时间为 5.73 秒；同一问题、同一会话的第二次请求由 Redis 入口缓存直接返回，端到端耗时为 44.6 毫秒。
 
 单元测试还覆盖 RAG 缓存命中、网络重试、4xx 不重试、RAG 来源与 `X-Trace-ID` 透传，以及 SSE 状态顺序。GitHub Actions 在无 API Key 的环境中自动运行这些测试。
 

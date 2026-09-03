@@ -11,8 +11,10 @@ class FakeCache:
     def __init__(self, cached_response: CachedRagResponse | None = None):
         self.cached_response = cached_response
         self.saved_answer: dict | None = None
+        self.requested_question: str | None = None
 
     def get(self, question: str, session_id: str) -> CachedRagResponse | None:
+        self.requested_question = question
         return self.cached_response
 
     def set(self, **kwargs) -> None:
@@ -93,6 +95,29 @@ class RagApiClientTest(unittest.TestCase):
             mock_post.call_args.kwargs["headers"],
             {"X-Trace-ID": "agent-trace-002"},
         )
+
+    def test_uses_original_user_question_as_cache_key(self) -> None:
+        """模型改写工具查询时，缓存仍应绑定 Router 收到的原问题。"""
+        cache = FakeCache()
+        client = RagApiClient(
+            cache=cache,
+            base_url="http://test",
+            max_retries=0,
+        )
+
+        with patch(
+            "agent.rag_client.httpx.post",
+            return_value=SuccessResponse(),
+        ):
+            client.ask(
+                question="请解释 Precision、Recall 和 MRR",
+                cache_question=self.question,
+                session_id=self.session_id,
+                trace_id="agent-trace-original-question",
+            )
+
+        self.assertEqual(cache.requested_question, self.question)
+        self.assertEqual(cache.saved_answer["question"], self.question)
 
     def test_does_not_retry_for_4xx_request_error(self) -> None:
         cache = FakeCache()

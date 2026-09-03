@@ -27,6 +27,7 @@ def build_tools(
     memory_store: AgentMemoryStore,
     execution_context: AgentExecutionContext,
     on_status: Callable[[str], None] | None = None,
+    cache_question: str | None = None,
 ):
     """创建本请求专属工具，避免 session 和执行记录串到其他用户。"""
 
@@ -75,7 +76,12 @@ def build_tools(
             return tool_response(ok=False, code=blocked, message="本次请求已阻止重复或过多工具调用。")
 
         emit_status("正在检索课程资料")
-        result = rag_client.ask(question=question, session_id=session_id, trace_id=trace_id)
+        result = rag_client.ask(
+            question=question,
+            session_id=session_id,
+            trace_id=trace_id,
+            cache_question=cache_question or question,
+        )
         execution_context.record_rag_result(
             sources=result.sources,
             rag_trace_id=result.rag_trace_id,
