@@ -1,23 +1,4 @@
 services:
-  mysql:
-    image: mysql:8.4
-    environment:
-      MYSQL_DATABASE: rag_project
-      MYSQL_USER: rag_user
-      MYSQL_PASSWORD: local_rag_password
-      MYSQL_ROOT_PASSWORD: local_root_password
-    volumes:
-      - mysql_data:/var/lib/mysql
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "mysqladmin ping -h localhost -u root -plocal_root_password"
-        ]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-
   redis:
     image: redis:7-alpine
     volumes:
@@ -28,32 +9,6 @@ services:
       timeout: 5s
       retries: 20
 
-  rag:
-    build:
-      context: ../RAG_project/RAG_FastAPI
-      dockerfile: Dockerfile
-    env_file:
-      - ../RAG_project/RAG_FastAPI/.env
-    environment:
-      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:?请先设置 DASHSCOPE_API_KEY}
-      DB_HOST: mysql
-      DB_PORT: 3306
-      DB_USER: rag_user
-      DB_PASSWORD: local_rag_password
-      DB_NAME: rag_project
-      UPLOAD_DIR: /app/uploads
-      CHROMA_PERSIST_DIR: /app/chroma_db
-      CHAT_HISTORY_DIR: /app/chat_history
-    ports:
-      - "8000:8000"
-    volumes:
-      - rag_uploads:/app/uploads
-      - rag_chroma:/app/chroma_db
-      - rag_chat_history:/app/chat_history
-    depends_on:
-      mysql:
-        condition: service_healthy
-
   agent:
     build:
       context: .
@@ -62,19 +17,14 @@ services:
       - .env
     environment:
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:?请先设置 DASHSCOPE_API_KEY}
-      RAG_API_BASE_URL: http://rag:8000
+      # 唯一的 RAG 服务运行在独立项目中，并映射到宿主机 8000 端口。
+      RAG_API_BASE_URL: http://host.docker.internal:8000
       REDIS_URL: redis://redis:6379/0
     ports:
       - "8001:8001"
     depends_on:
-      rag:
-        condition: service_started
       redis:
         condition: service_healthy
 
 volumes:
-  mysql_data:
   redis_data:
-  rag_uploads:
-  rag_chroma:
-  rag_chat_history:

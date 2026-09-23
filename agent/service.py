@@ -63,6 +63,9 @@ class AgentService:
                 "你是 UQ 学习助手。"
                 "涉及课程、作业、截止日期或上传资料的事实问题时，"
                 "必须调用 search_course_knowledge。"
+                "只要用户问题中出现课程代码（例如 INFS7410、INFS7203、DECO6500、REIT6811），"
+                "或要求根据课程资料、课件、作业要求回答，你的第一步必须是调用 search_course_knowledge；"
+                "即使你自认为知道答案，也绝不能在未调用该工具时直接回答课程事实或课程概念。"
                 "当用户要求生成学习计划时，如果任务或截止日期需要从课程资料确认，"
                 "先调用 search_course_knowledge，再调用 create_or_update_study_plan。"
                 "调用 create_or_update_study_plan 时，必须提供 course_id，"
@@ -108,38 +111,26 @@ class AgentService:
         started_at = perf_counter()
         degraded = False
         model_used = self.model_name
-        cached_result = self._get_cached_rag_result(
+        cached_result = self._cached_result(
             question=question,
             session_id=session_id,
+            execution_context=execution_context,
         )
         if cached_result is not None:
-            execution_context.record_tool("search_course_knowledge")
-            execution_context.record_rag_result(
-                sources=cached_result.sources,
-                rag_trace_id=cached_result.rag_trace_id,
-                cache_hit=True,
-            )
-            result = AgentExecutionResult(
+            self._persist_short_memory(
+                session_id=session_id,
+                question=question,
                 answer=cached_result.answer,
-                sources=execution_context.sources,
-                rag_trace_ids=execution_context.rag_trace_ids,
-                tools_called=execution_context.tools_called,
-                rag_cache_hit=True,
-                model_used="cache",
-                degraded=False,
-                blocked_tool_calls=[],
-                short_memory_turns_loaded=0,
-                profile_memory_loaded=False,
             )
             self._write_trace(
                 trace_id=trace_id,
                 session_id=session_id,
                 mode="sync",
-                result=result,
+                result=cached_result,
                 elapsed_ms=round((perf_counter() - started_at) * 1000, 2),
                 success=True,
             )
-            return result
+            return cached_result
         logger.info(
             "Agent 使用主模型开始处理：model=%s, trace_id=%s, session_id=%s",
             self.model_name,
@@ -178,17 +169,11 @@ class AgentService:
                     "备用模型调用也失败：trace_id=%s",
                     trace_id,
                 )
-                failed_result = AgentExecutionResult(
+                failed_result = self._result_from_context(
                     answer="",
-                    sources=execution_context.sources,
-                    rag_trace_ids=execution_context.rag_trace_ids,
-                    tools_called=execution_context.tools_called,
-                    rag_cache_hit=execution_context.rag_cache_hit,
+                    execution_context=execution_context,
                     model_used=model_used,
                     degraded=degraded,
-                    blocked_tool_calls=execution_context.blocked_tool_calls,
-                    short_memory_turns_loaded=execution_context.short_memory_turns_loaded,
-                    profile_memory_loaded=execution_context.profile_memory_loaded,
                 )
                 self._write_trace(
                     trace_id=trace_id,
@@ -206,17 +191,11 @@ class AgentService:
             session_id,
         )
 
-        result = AgentExecutionResult(
+        result = self._result_from_context(
             answer=answer,
-            sources=execution_context.sources,
-            rag_trace_ids=execution_context.rag_trace_ids,
-            tools_called=execution_context.tools_called,
-            rag_cache_hit=execution_context.rag_cache_hit,
+            execution_context=execution_context,
             model_used=model_used,
             degraded=degraded,
-            blocked_tool_calls=execution_context.blocked_tool_calls,
-            short_memory_turns_loaded=execution_context.short_memory_turns_loaded,
-            profile_memory_loaded=execution_context.profile_memory_loaded,
         )
         self._persist_short_memory(session_id=session_id, question=question, answer=answer)
         self._write_trace(
@@ -239,26 +218,25 @@ class AgentService:
         started_at = perf_counter()
         model_used = self.model_name
         degraded = False
-        cached_result = self._get_cached_rag_result(
+        cached_result = self._cached_result(
             question=question,
             session_id=session_id,
+            execution_context=execution_context,
         )
         if cached_result is not None:
-            execution_context.record_tool("search_course_knowledge")
-            execution_context.record_rag_result(
-                sources=cached_result.sources,
-                rag_trace_id=cached_result.rag_trace_id,
-                cache_hit=True,
-            )
             yield {"type": "status", "content": "已命中课程资料缓存"}
             yield {"type": "content", "content": cached_result.answer}
-            self._write_stream_trace(
+            self._persist_short_memory(
+                session_id=session_id,
+                question=question,
+                answer=cached_result.answer,
+            )
+            self._write_trace(
                 trace_id=trace_id,
                 session_id=session_id,
-                execution_context=execution_context,
-                model_used="cache",
-                degraded=False,
-                started_at=started_at,
+                mode="stream",
+                result=cached_result,
+                elapsed_ms=round((perf_counter() - started_at) * 1000, 2),
                 success=True,
             )
             yield self._metadata_event(execution_context)
@@ -473,6 +451,54 @@ class AgentService:
 
             yield event
 
+    def _cached_result(
+        self,
+        *,
+        question: str,
+        session_id: str,
+        execution_context: AgentExecutionContext,
+    ) -> AgentExecutionResult | None:
+        """缓存命中时直接复用已有 RAG 答案；这不是一次新的工具调用。"""
+        cached_result = self._get_cached_rag_result(
+            question=question,
+            session_id=session_id,
+        )
+        if cached_result is None:
+            return None
+        execution_context.record_rag_result(
+            sources=cached_result.sources,
+            rag_trace_id=cached_result.rag_trace_id,
+            cache_hit=True,
+        )
+        return self._result_from_context(
+            answer=cached_result.answer,
+            execution_context=execution_context,
+            model_used="cache",
+            degraded=False,
+        )
+
+    @staticmethod
+    def _result_from_context(
+        *,
+        answer: str,
+        execution_context: AgentExecutionContext,
+        model_used: str,
+        degraded: bool,
+    ) -> AgentExecutionResult:
+        """将本次执行记录收敛为 Router 和 trace 共用的最终结果。"""
+        return AgentExecutionResult(
+            answer=answer,
+            sources=execution_context.sources,
+            rag_trace_ids=execution_context.rag_trace_ids,
+            tools_called=execution_context.tools_called,
+            rag_cache_hit=execution_context.rag_cache_hit,
+            model_used=model_used,
+            degraded=degraded,
+            blocked_tool_calls=execution_context.blocked_tool_calls,
+            short_memory_turns_loaded=execution_context.short_memory_turns_loaded,
+            profile_memory_loaded=execution_context.profile_memory_loaded,
+        )
+
     @staticmethod
     def _metadata_event(execution_context: AgentExecutionContext) -> dict:
         return {
@@ -510,17 +536,11 @@ class AgentService:
         started_at: float,
         success: bool,
     ) -> None:
-        result = AgentExecutionResult(
+        result = self._result_from_context(
             answer="",
-            sources=execution_context.sources,
-            rag_trace_ids=execution_context.rag_trace_ids,
-            tools_called=execution_context.tools_called,
-            rag_cache_hit=execution_context.rag_cache_hit,
+            execution_context=execution_context,
             model_used=model_used,
             degraded=degraded,
-            blocked_tool_calls=execution_context.blocked_tool_calls,
-            short_memory_turns_loaded=execution_context.short_memory_turns_loaded,
-            profile_memory_loaded=execution_context.profile_memory_loaded,
         )
         self._write_trace(
             trace_id=trace_id,

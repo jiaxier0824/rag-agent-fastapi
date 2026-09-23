@@ -52,3 +52,18 @@ class AgentApiTest(unittest.TestCase):
             [{"filename": "INFS7410_outline.md"}],
         )
         self.assertTrue(response.json()["trace_id"])
+
+    def test_allows_browser_requests_from_rag_frontend(self) -> None:
+        response = build_client().options(
+            "/api/agent/chat",
+            headers={
+                "Origin": "http://127.0.0.1:8000",
+                "Access-Control-Request-Method": "POST",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.headers["access-control-allow-origin"],
+            "http://127.0.0.1:8000",
+        )

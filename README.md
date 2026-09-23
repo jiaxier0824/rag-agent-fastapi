@@ -17,15 +17,15 @@
 - RAG 请求重试、超时处理与调用链 `trace_id`
 - 透传 RAG V2 的来源文件与调用链，最终回答可追溯资料依据
 - Agent JSONL 调用日志：模型切换、工具/拦截记录、记忆加载、缓存、来源、耗时与 RAG 调用链
-- Docker Compose 一键启动 MySQL、Redis、RAG、Agent
+- Docker Compose 启动 Agent 与 Redis；Agent 通过 HTTP 调用独立运行的 RAG 服务
 
 ## 技术栈
 
-Python、FastAPI、LangChain、通义千问、Redis、MySQL、Chroma、Docker、Docker Compose。
+Python、FastAPI、LangChain、通义千问、Redis、Docker、Docker Compose。
 
 ## 架构
 
-前端/调用方 → FastAPI Agent → LLM 选择工具 → RAG 服务或学习计划工具 → Redis/MySQL/Chroma。
+前端/调用方 → FastAPI Agent → LLM 选择工具 → RAG 服务或学习计划工具 → Redis。
 
 RAG 服务是独立项目 `RAG_FastAPI`，Agent 通过 `RAG_API_BASE_URL` 调用它，而不是直接耦合 RAG 源码。Agent 将自己的 `X-Trace-ID` 传给 RAG；RAG 返回的 `sources` 会由 Agent 透传给调用方。
 
@@ -51,7 +51,8 @@ AGENT_MAX_TOOL_CALLS=6
 
 ## Docker 启动
 
-本项目的 `docker-compose.yml` 会同时启动 MySQL、Redis、RAG、Agent。
+先在 `RAG_FastAPI` 项目启动唯一的 RAG 服务（`http://127.0.0.1:8000`）；
+本项目的 `docker-compose.yml` 只启动 Redis 与 Agent（`http://127.0.0.1:8001`）。
 
 ```bash
 docker compose up --build -d
@@ -65,7 +66,6 @@ docker compose ps
 
 接口文档：
 
-- RAG：http://127.0.0.1:8000/docs
 - Agent：http://127.0.0.1:8001/docs
 
 停止服务：

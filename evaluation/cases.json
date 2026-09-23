@@ -1,42 +1,17 @@
 [
-  {
-    "id": "infs7410_project_part1_deadline",
-    "question": "INFS7410 Project Part 1 的截止时间是什么？",
-    "expected_keywords": ["9月4", "4"],
-    "expected_sources": ["INFS7410_Sem2_2026_assessment_summary.md"],
-    "expected_status": "正在检索课程资料",
-    "expected_tools": ["search_course_knowledge"]
-  },
-  {
-    "id": "infs7410_quiz_scoring",
-    "question": "INFS7410 的 Weekly quizzes 最终如何计分？",
-    "expected_keywords": ["13", "10"],
-    "expected_sources": ["INFS7410_Sem2_2026_assessment_summary.md"],
-    "expected_status": "正在检索课程资料",
-    "expected_tools": ["search_course_knowledge"]
-  },
-  {
-    "id": "reit6811_assignment1_deadline",
-    "question": "REIT6811 Assignment 1 的截止时间是什么？",
-    "expected_keywords": ["9月7", "4"],
-    "expected_sources": ["REIT6811_Sem2_2026_assessment_summary.md"],
-    "expected_status": "正在检索课程资料",
-    "expected_tools": ["search_course_knowledge"]
-  },
-  {
-    "id": "reit6811_exam_hurdle",
-    "question": "REIT6811 想通过课程，期末考试至少需要多少分？",
-    "expected_keywords": ["40"],
-    "expected_sources": ["REIT6811_Sem2_2026_assessment_summary.md"],
-    "expected_status": "正在检索课程资料",
-    "expected_tools": ["search_course_knowledge"]
-  },
-  {
-    "id": "infs7410_oral_exam",
-    "question": "为什么 INFS7410 的 Final Oral Exam 很重要？",
-    "expected_keywords": ["50", "25"],
-    "expected_sources": ["INFS7410_Sem2_2026_assessment_summary.md"],
-    "expected_status": "正在检索课程资料",
-    "expected_tools": ["search_course_knowledge"]
-  }
+  {"id":"infs7410_weekly_quizzes","question":"INFS7410 的 Weekly quizzes 最终如何计分？","expected_keywords":["13","10"],"expected_sources":["INFS7410_Course_Profile_Assessment.md"],"expected_status":"正在检索课程资料","expected_tools":["search_course_knowledge"]},
+  {"id":"infs7410_project_part1_deadline","question":"INFS7410 Project Part 1 的权重和截止时间是什么？","expected_keywords":["10","4/09/2026"],"expected_sources":["INFS7410_Course_Profile_Assessment.md"],"expected_status":"正在检索课程资料","expected_tools":["search_course_knowledge"]},
+  {"id":"infs7410_lexical_retrieval","question":"INFS7410 Week 3 介绍了哪两种经典词法检索方法？请直接写出 TF-IDF 和 BM25 的名称。","expected_keywords":["TF-IDF","BM25"],"expected_sources":["INFS7410_Week03_Traditional_Lexical_Retrieval.md"],"expected_status":"正在检索课程资料","expected_tools":["search_course_knowledge"]},
+  {"id":"infs7410_offline_metrics","question":"INFS7410 的离线检索评测中，Precision、Recall 和 MRR 分别属于哪些评价指标？请保留这三个英文术语。","expected_keywords":["Precision","Recall","MRR"],"expected_sources":["INFS7410_Week02_Offline_Evaluation.md"],"expected_status":"正在检索课程资料","expected_tools":["search_course_knowledge"]},
+  {"id":"infs7410_learned_sparse","question":"INFS7410 Week 6 的 learned sparse retrieval 讲到了哪些代表模型？请至少列举 Splade 和 Tildev2。","expected_keywords":["Splade","Tildev2"],"expected_sources":["INFS7410_Week06_Learned_Sparse_Retrieval.md"],"expected_status":"正在检索课程资料","expected_tools":["search_course_knowledge"]},
+  {"id":"infs7203_code_interview","question":"INFS7203 的 Project Presentation and Code Interview 占多少分、每名学生的时长是多少？","expected_keywords":["15","8"],"expected_sources":["INFS7203_Course_Profile_Assessment.md"],"expected_status":"正在检索课程资料","expected_tools":["search_course_knowledge"]},
+  {"id":"infs7203_classification","question":"为什么 INFS7203 将 classification 归为 supervised learning？请保留 supervised learning 这个术语。","expected_keywords":["supervised","label"],"expected_sources":["INFS7203_Week02_Introduction_To_Classification.md"],"expected_status":"正在检索课程资料","expected_tools":["search_course_knowledge"]},
+  {"id":"infs7203_decision_tree_random_forest","question":"INFS7203 Week 3 主要介绍了哪两种分类模型？请保留 Decision Tree 和 Random Forest 的英文名称。","expected_keywords":["Decision Tree","Random Forest"],"expected_sources":["INFS7203_Week03_Decision_Tree_And_Random_Forest.md"],"expected_status":"正在检索课程资料","expected_tools":["search_course_knowledge"]},
+  {"id":"infs7203_dbscan_parameters","question":"INFS7203 的 DBSCAN 中 Eps 和 MinPts 分别表示什么？请保留 Eps 和 MinPts 术语。","expected_keywords":["Eps","MinPts"],"expected_sources":["INFS7203_Week06_DBSCAN_And_Hierarchical_Clustering.md"],"expected_status":"正在检索课程资料","expected_tools":["search_course_knowledge"]},
+  {"id":"deco6500_a2","question":"DECO6500 的 A2 是个人任务还是小组任务？占多少分？","expected_keywords":["小组","40"],"expected_sources":["DECO6500_Course_Profile_Assessment.md"],"expected_status":"正在检索课程资料","expected_tools":["search_course_knowledge"]},
+  {"id":"deco6500_feedback_loops","question":"DECO6500 中 reinforcing loop 和 balancing loop 分别会产生什么效果？请保留 reinforcing 和 balancing 两个术语。","expected_keywords":["reinforcing","balancing"],"expected_sources":["DECO6500_Week02_Structure_To_Behaviour_Feedback_Loops.md"],"expected_status":"正在检索课程资料","expected_tools":["search_course_knowledge"]},
+  {"id":"reit6811_exam_hurdle","question":"REIT6811 想通过课程，期末考试至少需要多少分？","expected_keywords":["40"],"expected_sources":["REIT6811_Course_Profile_Assessment.md"],"expected_status":"正在检索课程资料","expected_tools":["search_course_knowledge"]},
+  {"id":"reit6811_referencing_tools","question":"REIT6811 的 literature review 与 referencing 材料建议使用哪些文献管理软件？请保留 Mendeley 和 Zotero。","expected_keywords":["Mendeley","Zotero"],"expected_sources":["REIT6811_Week03_Literature_Review_And_Referencing.md"],"expected_status":"正在检索课程资料","expected_tools":["search_course_knowledge"]},
+  {"id":"reit6811_human_research","question":"REIT6811 为什么研究要解决人的问题时，需要与人一起开展研究？请说明 human research 的价值。","expected_keywords":["人","问题"],"expected_sources":["REIT6811_Lecture08_Research_With_Humans.md"],"expected_status":"正在检索课程资料","expected_tools":["search_course_knowledge"]},
+  {"id":"reit6811_academic_integrity","question":"REIT6811 材料中的 academic integrity 六项核心价值包含哪两项？请至少说明诚实和信任。","expected_keywords":["诚实","信任"],"expected_sources":["REIT6811_Week02_Academic_Research_Integrity.md"],"expected_status":"正在检索课程资料","expected_tools":["search_course_knowledge"]}
 ]

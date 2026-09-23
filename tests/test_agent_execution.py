@@ -49,7 +49,7 @@ class AgentExecutionTest(unittest.TestCase):
         self.assertEqual(result.answer, "缓存中的课程答案")
         self.assertTrue(result.rag_cache_hit)
         self.assertEqual(result.model_used, "cache")
-        self.assertEqual(result.tools_called, ["search_course_knowledge"])
+        self.assertEqual(result.tools_called, [])
         self.assertEqual(service.trace_logger.events[0]["model_used"], "cache")
 
     def test_execute_returns_rag_sources_and_writes_trace(self) -> None:
@@ -91,6 +91,72 @@ class AgentExecutionTest(unittest.TestCase):
             service.trace_logger.events[0]["sources"],
             ["INFS7410_outline.md"],
         )
+
+    def test_execute_keeps_course_question_in_agent_tool_loop(self) -> None:
+        service = object.__new__(AgentService)
+        service.model = "primary-model"
+        service.fallback_model = "fallback-model"
+        service.model_name = "primary-model"
+        service.fallback_model_name = "fallback-model"
+        service.trace_logger = FakeTraceLogger()
+
+        class EmptyCacheClient:
+            @staticmethod
+            def get_cached(*, question, session_id):
+                return None
+
+        service.rag_client = EmptyCacheClient()
+
+        def fake_invoke(*, model, question, **_kwargs):
+            self.assertEqual(model, "primary-model")
+            self.assertEqual(question, "INFS7410 的课程资料怎么说？")
+            return "Agent 通过 search_course_knowledge 得到课程资料答案。"
+
+        service._invoke_agent = fake_invoke
+
+        result = service.execute(
+            question="INFS7410 的课程资料怎么说？",
+            session_id="course-guard-test",
+            trace_id="course-guard-trace",
+        )
+
+        self.assertEqual(result.answer, "Agent 通过 search_course_knowledge 得到课程资料答案。")
+        self.assertEqual(result.model_used, "primary-model")
+
+    def test_course_plan_request_keeps_agent_tool_orchestration(self) -> None:
+        service = object.__new__(AgentService)
+        service.model = "primary-model"
+        service.fallback_model = "fallback-model"
+        service.model_name = "primary-model"
+        service.fallback_model_name = "fallback-model"
+        service.trace_logger = FakeTraceLogger()
+
+        class NoDirectRagClient:
+            @staticmethod
+            def get_cached(**_kwargs):
+                return None
+
+            @staticmethod
+            def ask(**_kwargs):
+                self.fail("创建计划不能绕过 Agent，直接调用 RAG")
+
+        service.rag_client = NoDirectRagClient()
+
+        def fake_invoke(*, model, question, **_kwargs):
+            self.assertEqual(model, "primary-model")
+            self.assertIn("创建学习计划", question)
+            return "Agent 已编排课程检索和计划工具。"
+
+        service._invoke_agent = fake_invoke
+
+        result = service.execute(
+            question="请为 INFS7410 创建学习计划",
+            session_id="plan-task-test",
+            trace_id="plan-task-trace",
+        )
+
+        self.assertEqual(result.model_used, "primary-model")
+        self.assertEqual(result.answer, "Agent 已编排课程检索和计划工具。")
 
     def test_execute_falls_back_to_secondary_model_and_records_degradation(self) -> None:
         service = object.__new__(AgentService)

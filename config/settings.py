@@ -10,6 +10,10 @@ class Settings(BaseSettings):
     rag_api_max_retries: int = 2
     rag_api_retry_interval_seconds: float = 1.0
     agent_observability_log_path: str = "./logs/agent_requests.jsonl"
+    cors_allowed_origins: list[str] = [
+        "http://127.0.0.1:8000",
+        "http://localhost:8000",
+    ]
 
     model_config = SettingsConfigDict(
         env_file=".env",
