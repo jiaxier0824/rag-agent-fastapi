@@ -48,6 +48,18 @@ class FakeRagClient:
         )
 
 
+class FakeMcpClient:
+    def call_tool(self, name, arguments):
+        if name == "get_study_plan":
+            return {
+                "ok": True,
+                "code": "OK",
+                "message": "学习计划读取完成。",
+                "data": {"course_id": arguments["course_id"], "plan": "IR 计划"},
+            }
+        raise AssertionError(f"unexpected MCP tool: {name}")
+
+
 class AgentV3Test(unittest.TestCase):
     def test_context_blocks_duplicate_tool_call(self):
         context = AgentExecutionContext(max_tool_calls=2)
@@ -92,12 +104,10 @@ class AgentV3Test(unittest.TestCase):
         memory.redis_client = redis_client
         context = AgentExecutionContext(max_tool_calls=2)
         tools = build_tools(
-            rag_client=FakeRagClient(),
             session_id="s1",
             trace_id="t1",
-            study_plan_store=plans,
-            memory_store=memory,
             execution_context=context,
+            mcp_client=FakeMcpClient(),
         )
         get_plan = next(item for item in tools if item.name == "get_study_plan")
         payload = json.loads(get_plan.invoke({"course_id": "INFS7410"}))

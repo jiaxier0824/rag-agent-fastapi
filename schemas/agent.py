@@ -14,6 +14,9 @@ class AgentChatRequest(BaseModel):
 
     session_id: str = Field(
         default="user_001",
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9_-]+$",
         description="用户会话编号",
     )
 

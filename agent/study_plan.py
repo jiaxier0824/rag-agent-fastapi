@@ -22,15 +22,21 @@ def build_study_plan(
         return "截止日期已到或已过，无法生成新的学习计划。"
 
     learning_days = max(1, int(remaining_days * 0.5))
-    practice_days = max(1, int(remaining_days * 0.3))
+    practice_days = min(
+        remaining_days - learning_days,
+        max(1, int(remaining_days * 0.3)),
+    )
     review_days = remaining_days - learning_days - practice_days
 
-    return (
+    plan = (
         f"任务：{task}\n"
         f"截止日期：{deadline}\n"
         f"剩余天数：{remaining_days} 天\n"
         f"每日学习时长：{daily_study_hours} 小时\n\n"
-        f"第 1-{learning_days} 天：学习核心知识并整理笔记。\n"
-        f"第 {learning_days + 1}-{learning_days + practice_days} 天：完成练习和任务初稿。\n"
-        f"最后 {review_days} 天：检查、修改并预留提交缓冲时间。"
+        f"第 1-{learning_days} 天：学习核心知识并整理笔记。"
     )
+    if practice_days:
+        plan += f"\n第 {learning_days + 1}-{learning_days + practice_days} 天：完成练习和任务初稿。"
+    if review_days:
+        plan += f"\n最后 {review_days} 天：检查、修改并预留提交缓冲时间。"
+    return plan

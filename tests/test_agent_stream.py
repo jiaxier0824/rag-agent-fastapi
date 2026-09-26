@@ -1,42 +1,42 @@
 import unittest
 
-from agent.rag_client import RagQueryResult
 from agent.service import AgentService
 
 
 class AgentStreamTest(unittest.TestCase):
-    def test_stream_returns_cached_answer_without_starting_model_thread(self) -> None:
+    def test_stream_does_not_bypass_agent_when_course_answer_is_cached(self) -> None:
         service = self._build_service()
 
         class CachedRagClient:
             @staticmethod
             def get_cached(**_kwargs):
-                return RagQueryResult(
-                    answer="缓存中的流式课程答案",
-                    sources=["INFS7410_outline.md"],
-                    rag_trace_id="cached-stream-trace",
-                    cache_hit=True,
-                )
+                self.fail("Agent 入口不应读取课程缓存")
 
         service.rag_client = CachedRagClient()
 
-        def must_not_stream(**_kwargs):
-            self.fail("缓存命中后不应启动模型流")
+        def stream_plan(*, execution_context, on_status=None, **_kwargs):
+            execution_context.record_tool("search_course_knowledge")
+            execution_context.record_rag_result(
+                sources=["INFS7410_outline.md"],
+                rag_trace_id="cached-stream-trace",
+                cache_hit=True,
+            )
+            execution_context.record_tool("create_or_update_study_plan")
+            yield "学习计划已保存。"
 
-        service._stream_agent = must_not_stream
+        service._stream_agent = stream_plan
 
         events = list(
             service.stream_execute(
-                question="作业什么时候截止？",
+                question="请根据课程资料创建学习计划",
                 session_id="stream-test",
                 trace_id="trace-stream-cache-hit",
             )
         )
 
-        self.assertEqual(events[0], {"type": "status", "content": "已命中课程资料缓存"})
-        self.assertEqual(events[1], {"type": "content", "content": "缓存中的流式课程答案"})
-        self.assertEqual(events[2]["type"], "metadata")
-        self.assertEqual(events[2]["sources"], ["INFS7410_outline.md"])
+        self.assertEqual(events[0], {"type": "status", "content": "正在分析你的问题"})
+        self.assertIn({"type": "content", "content": "学习计划已保存。"}, events)
+        self.assertEqual(events[-1]["tools_called"], ["search_course_knowledge", "create_or_update_study_plan"])
 
     def _build_service(self) -> AgentService:
         service = object.__new__(AgentService)

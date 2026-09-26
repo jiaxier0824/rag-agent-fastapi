@@ -78,7 +78,7 @@ class AgentMemoryStore:
             logger.warning("Agent 长期偏好读取失败，本次跳过偏好")
             return {}
 
-    def update_profile(self, session_id: str, **updates: object) -> dict[str, object]:
+    def update_profile(self, session_id: str, **updates: object) -> dict[str, object] | None:
         profile = self.get_profile(session_id)
         profile.update({key: value for key, value in updates.items() if value is not None})
         try:
@@ -87,9 +87,10 @@ class AgentMemoryStore:
                 self.profile_ttl_seconds,
                 json.dumps(profile, ensure_ascii=False),
             )
+            return profile
         except redis.RedisError:
             logger.warning("Agent 长期偏好写入失败，本次跳过保存")
-        return profile
+            return None
 
     @staticmethod
     def _history_key(session_id: str) -> str:

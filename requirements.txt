@@ -7,4 +7,6 @@ pydantic-settings==2.14.2
 langchain==1.3.13
 langchain-community==0.4.2
 langchain-core==1.4.9
+langgraph==1.2.11
+mcp==1.30.0
 dashscope==1.26.3
