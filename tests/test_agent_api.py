@@ -1,3 +1,4 @@
+import json
 import unittest
 
 from fastapi.testclient import TestClient
@@ -21,6 +22,23 @@ class FakeAgentService:
             model_used="primary-model",
             degraded=False,
         )
+
+
+class FakeStreamingAgentService:
+    def stream_execute(self, *, question: str, session_id: str, trace_id: str):
+        assert question == "课程作业怎么计分？"
+        assert session_id == "api-test"
+        assert trace_id
+        yield {"type": "status", "content": "正在检索课程资料"}
+        yield {"type": "content", "content": "作业占 60%。"}
+        yield {
+            "type": "metadata",
+            "content": "",
+            "sources": ["INFS7410_outline.md"],
+            "rag_trace_ids": [trace_id],
+            "tools_called": ["search_course_knowledge"],
+            "blocked_tool_calls": [],
+        }
 
 
 def build_client() -> TestClient:
@@ -67,3 +85,23 @@ class AgentApiTest(unittest.TestCase):
             response.headers["access-control-allow-origin"],
             "http://127.0.0.1:8000",
         )
+
+    def test_stream_http_route_emits_content_and_done_metadata(self) -> None:
+        app.dependency_overrides[get_agent_service] = FakeStreamingAgentService
+        response = TestClient(app).post(
+            "/api/agent/chat/stream",
+            json={"question": "课程作业怎么计分？", "session_id": "api-test"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.headers["content-type"].startswith("text/event-stream"))
+        events = [
+            json.loads(line.removeprefix("data: "))
+            for line in response.text.splitlines()
+            if line.startswith("data: ")
+        ]
+        self.assertEqual([event["type"] for event in events], ["status", "content", "done"])
+        self.assertEqual(events[1]["content"], "作业占 60%。")
+        self.assertEqual(events[2]["sources"], [{"filename": "INFS7410_outline.md"}])
+        self.assertEqual(events[2]["tools_called"], ["search_course_knowledge"])
+        self.assertEqual(events[2]["trace_id"], events[1]["trace_id"])

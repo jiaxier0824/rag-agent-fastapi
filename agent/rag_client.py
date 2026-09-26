@@ -50,14 +50,10 @@ class RagApiClient:
             question=cache_question,
             session_id=session_id,
         )
-
         if cached_result is not None:
             return cached_result
 
-        logger.info(
-            "RAG 缓存未命中：session_id=%s",
-            session_id,
-        )
+        logger.info("RAG 缓存未命中：session_id=%s", session_id)
 
         for attempt in range(self.max_retries + 1):
             try:
@@ -66,6 +62,7 @@ class RagApiClient:
                     json={
                         "question": question,
                         "session_id": session_id,
+                        "use_history": False,
                     },
                     headers={"X-Trace-ID": trace_id},
                     timeout=self.timeout_seconds,
@@ -168,11 +165,7 @@ class RagApiClient:
         question: str,
         session_id: str,
     ) -> RagQueryResult | None:
-        """只读取缓存，不会回退到 HTTP 调用。
-
-        Agent Service 在模型调用前使用此方法：命中时可直接返回，避免“先等模型
-        决策、再发现已有答案”的无效等待。
-        """
+        """只读取课程资料缓存，不会回退到 HTTP 调用。"""
         cached_answer = self.cache.get(
             question=question,
             session_id=session_id,

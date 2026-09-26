@@ -26,15 +26,17 @@ class StudyPlanStore:
             session_id: str,
             course_id: str,
             plan: str,
-    ) -> None:
+    ) -> bool:
         try:
             self.redis_client.setex(
                 self._build_key(session_id, course_id),
                 self.ttl_seconds,
                 plan,
             )
+            return True
         except redis.RedisError:
             logger.warning("学习计划保存失败，本次跳过保存")
+            return False
 
     def get(
             self,

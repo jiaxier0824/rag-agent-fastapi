@@ -119,6 +119,20 @@ class RagApiClientTest(unittest.TestCase):
         self.assertEqual(cache.requested_question, self.question)
         self.assertEqual(cache.saved_answer["question"], self.question)
 
+    def test_tool_reads_cache_before_http_call(self) -> None:
+        cache = FakeCache()
+        client = RagApiClient(cache=cache, base_url="http://test", max_retries=0)
+
+        with patch("agent.rag_client.httpx.post", return_value=SuccessResponse()) as mock_post:
+            client.ask(
+                self.question,
+                self.session_id,
+                "agent-trace-cache-prechecked",
+            )
+
+        self.assertEqual(cache.requested_question, self.question)
+        self.assertFalse(mock_post.call_args.kwargs["json"]["use_history"])
+
     def test_does_not_retry_for_4xx_request_error(self) -> None:
         cache = FakeCache()
         client = RagApiClient(

@@ -8,6 +8,6 @@ chat_history/
 md5.text
 .DS_Store
 .idea/
-evaluation/results.json
+evaluation/results*.json
 logs/
 dump.rdb

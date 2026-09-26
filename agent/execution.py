@@ -16,6 +16,7 @@ class AgentExecutionContext:
     blocked_tool_calls: list[dict[str, str]] = field(default_factory=list)
     short_memory_turns_loaded: int = 0
     profile_memory_loaded: bool = False
+    profile_save_succeeded: bool = False
     _tool_signatures: set[str] = field(default_factory=set, repr=False)
 
     def record_tool(self, tool_name: str) -> None:

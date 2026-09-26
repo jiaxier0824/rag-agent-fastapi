@@ -1,6 +1,5 @@
 import unittest
 
-from agent.rag_client import RagQueryResult
 from agent.service import AgentService
 
 
@@ -13,7 +12,7 @@ class FakeTraceLogger:
 
 
 class AgentExecutionTest(unittest.TestCase):
-    def test_execute_returns_cached_rag_result_without_invoking_model(self) -> None:
+    def test_cached_course_answer_does_not_skip_plan_orchestration(self) -> None:
         service = object.__new__(AgentService)
         service.model = "primary-model"
         service.fallback_model = "fallback-model"
@@ -24,33 +23,33 @@ class AgentExecutionTest(unittest.TestCase):
         class CachedRagClient:
             @staticmethod
             def get_cached(*, question, session_id):
-                self.assertEqual(question, "课程作业怎么计分？")
-                self.assertEqual(session_id, "agent-test")
-                return RagQueryResult(
-                    answer="缓存中的课程答案",
-                    sources=["INFS7410_outline.md"],
-                    rag_trace_id="cached-rag-trace",
-                    cache_hit=True,
-                )
+                self.fail("Agent 入口不应读取课程缓存")
 
         service.rag_client = CachedRagClient()
 
-        def must_not_invoke(**_kwargs):
-            self.fail("缓存命中后不应调用 Agent 模型")
+        def invoke_plan(*, execution_context, **_kwargs):
+            execution_context.record_tool("search_course_knowledge")
+            execution_context.record_rag_result(
+                sources=["INFS7410_outline.md"],
+                rag_trace_id="cached-rag-trace",
+                cache_hit=True,
+            )
+            execution_context.record_tool("create_or_update_study_plan")
+            return "学习计划已保存。"
 
-        service._invoke_agent = must_not_invoke
+        service._invoke_agent = invoke_plan
 
         result = service.execute(
-            question="课程作业怎么计分？",
+            question="请根据课程资料创建学习计划",
             session_id="agent-test",
             trace_id="agent-trace-cache-hit",
         )
 
-        self.assertEqual(result.answer, "缓存中的课程答案")
+        self.assertEqual(result.answer, "学习计划已保存。")
         self.assertTrue(result.rag_cache_hit)
-        self.assertEqual(result.model_used, "cache")
-        self.assertEqual(result.tools_called, [])
-        self.assertEqual(service.trace_logger.events[0]["model_used"], "cache")
+        self.assertEqual(result.model_used, "primary-model")
+        self.assertEqual(result.tools_called, ["search_course_knowledge", "create_or_update_study_plan"])
+        self.assertEqual(service.trace_logger.events[0]["model_used"], "primary-model")
 
     def test_execute_returns_rag_sources_and_writes_trace(self) -> None:
         service = object.__new__(AgentService)

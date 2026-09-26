@@ -40,8 +40,6 @@ def get_agent_trace_logger() -> AgentTraceLogger:
 @lru_cache
 def get_agent_service() -> AgentService:
     return AgentService(
-        rag_client=get_rag_api_client(),
-        study_plan_store=get_study_plan_store(),
         memory_store=get_agent_memory_store(),
         trace_logger=get_agent_trace_logger(),
     )

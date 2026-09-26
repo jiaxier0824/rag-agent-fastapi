@@ -14,7 +14,8 @@ services:
       context: .
       dockerfile: Dockerfile
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:?请先设置 DASHSCOPE_API_KEY}
       # 唯一的 RAG 服务运行在独立项目中，并映射到宿主机 8000 端口。
