@@ -114,7 +114,7 @@ python -B -m unittest discover -s tests -v
 EVALUATION_RESULTS_PATH=evaluation/results_latest.json python -m evaluation.run_final_evaluation
 ```
 
-当前 Agent Service 集成题集包含 51 道问题（42 道课程知识、9 道工具/记忆场景），覆盖 41 份资料的来源、关键事实、工具选择与响应时间。真实测评会调用外部模型，应在 RAG、Redis 与网络环境就绪后单独运行。2026-09-26 从空白结果文件完整重跑：严格通过 42/51，知识题关键词匹配 35/42，工具选择 50/51，预期来源命中 41/42，平均每题 10.201 秒；无超时或运行器错误。原始逐题结果见 `evaluation/results_latest.json`。这些是当前题集的结果，不代表未知问题的泛化正确率。
+当前 Agent Service 集成题集包含 51 道问题（42 道课程知识、9 道工具/记忆场景），覆盖 41 份资料的来源、关键事实、工具选择与响应时间。真实测评会调用外部模型，应在 RAG、Redis 与网络环境就绪后单独运行。2026-09-26 从空白结果文件完整重跑：严格通过 42/51，知识题关键词匹配 35/42，工具选择 50/51，预期来源命中 41/42，平均每题 10.201 秒；无超时或运行器错误。逐题报告保存在本地 `evaluation/results_latest.json`，按 `.gitignore` 不上传；仓库保留题集与运行脚本，便于在自己的环境中复测。这些是当前题集的结果，不代表未知问题的泛化正确率。
 这 51 题会调用真实模型、MCP 工具和独立 RAG HTTP 服务，但直接调用 Agent Service，不经过 Agent HTTP Router 或浏览器；HTTP/SSE 契约由独立 API 测试覆盖。
 
 单元测试还覆盖显式 LangGraph 工具闭环、五个 MCP 工具注册与 stdio 调用、RAG 缓存命中、网络重试、4xx 不重试、RAG 来源与 `X-Trace-ID` 透传，以及 SSE 状态顺序。GitHub Actions 在无 API Key 的环境中自动运行这些测试。
