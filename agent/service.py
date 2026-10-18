@@ -39,8 +39,14 @@ class AgentService:
         self.trace_logger = trace_logger
         self.model_name = model_name
         self.fallback_model_name = fallback_model_name
-        self.model = ChatTongyi(model=model_name)
-        self.fallback_model = ChatTongyi(model=fallback_model_name)
+        api_key = (
+            settings.dashscope_api_key.get_secret_value()
+            if settings.dashscope_api_key is not None else None
+        )
+        self.model = ChatTongyi(model=model_name, api_key=api_key)
+        self.fallback_model = ChatTongyi(
+            model=fallback_model_name, api_key=api_key,
+        )
         self.runtime = AgentGraphRuntime(memory_store=memory_store)
 
     def _invoke_agent(

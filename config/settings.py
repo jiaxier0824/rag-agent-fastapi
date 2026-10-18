@@ -1,8 +1,11 @@
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    agent_model_name: str = "qwen-turbo"
+    # 从环境变量或 .env 读取；SecretStr 避免打印配置时暴露密钥。
+    dashscope_api_key: SecretStr | None = None
+    agent_model_name: str = "qwen-flash"
     agent_fallback_model_name: str = "qwen-plus"
 
     rag_api_base_url: str = "http://127.0.0.1:8000"
