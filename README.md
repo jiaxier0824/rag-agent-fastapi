@@ -13,7 +13,7 @@
   - `save_learning_preferences`：仅保存用户明确表达的稳定学习偏好
 - Redis 缓存 RAG 工具的问答结果，并保存短期会话记忆、显式偏好与多课程计划；相同问题命中缓存时，Agent 仍判断工具，但跳过 RAG HTTP 请求
 - 请求级工具保护：参数校验、重复工具调用拦截、最大调用次数限制、结构化成功/失败结果
-- `qwen-turbo` 主模型，`qwen-plus` 失败降级
+- `qwen-flash` 主模型，`qwen-plus` 失败降级
 - SSE 流式响应，实时返回“正在检索资料”等状态
 - RAG 请求重试、超时处理与调用链 `trace_id`
 - 透传 RAG V2 的来源文件与调用链，最终回答可追溯资料依据
@@ -44,13 +44,23 @@ cp .env.example .env
 
 ```env
 DASHSCOPE_API_KEY=你的百炼API密钥
-AGENT_MODEL_NAME=qwen-turbo
+AGENT_MODEL_NAME=qwen-flash
 AGENT_FALLBACK_MODEL_NAME=qwen-plus
 AGENT_SHORT_MEMORY_MAX_TURNS=4
 AGENT_MAX_TOOL_CALLS=6
 ```
 
 不要上传 `.env`。应填写归属项目业务空间的 API Key；不要使用聊天记录中已经暴露过的旧 Key。
+
+配置优先级为：环境变量 > `.env` > 代码默认值。`Settings` 读取密钥后显式传给主、备模型；不需要把 `.env` 中的密钥另外导出为环境变量。密钥没有默认值，使用模型前必须提供。
+
+直接运行时，先准备好独立的 RAG 和 Redis 服务，再从本项目根目录执行：
+
+```bash
+uvicorn api:app --host 0.0.0.0 --port 8001
+```
+
+`.env` 按当前工作目录查找，因此应在本项目根目录启动。Docker Compose 则将配置注入容器环境，并覆盖容器内的 RAG、Redis 地址。
 
 ## Docker 启动
 
@@ -114,8 +124,9 @@ python -B -m unittest discover -s tests -v
 EVALUATION_RESULTS_PATH=evaluation/results_latest.json python -m evaluation.run_final_evaluation
 ```
 
-当前 Agent Service 集成题集包含 51 道问题（42 道课程知识、9 道工具/记忆场景），覆盖 41 份资料的来源、关键事实、工具选择与响应时间。真实测评会调用外部模型，应在 RAG、Redis 与网络环境就绪后单独运行。2026-09-26 从空白结果文件完整重跑：严格通过 42/51，知识题关键词匹配 35/42，工具选择 50/51，预期来源命中 41/42，平均每题 10.201 秒；无超时或运行器错误。逐题报告保存在本地 `evaluation/results_latest.json`，按 `.gitignore` 不上传；仓库保留题集与运行脚本，便于在自己的环境中复测。这些是当前题集的结果，不代表未知问题的泛化正确率。
-这 51 题会调用真实模型、MCP 工具和独立 RAG HTTP 服务，但直接调用 Agent Service，不经过 Agent HTTP Router 或浏览器；HTTP/SSE 契约由独立 API 测试覆盖。
+题集包含 51 道问题（42 道课程知识、9 道工具/记忆场景），覆盖来源、关键事实、工具选择与响应时间。2026-10-18 选定的收尾版本已从真实 Agent HTTP/SSE 入口完成 51 题、53 次请求，自动综合规则通过 44/51（86.3%），平均主问题耗时 12.661 秒，未触发模型降级。评分条件、未通过项及撤回实验见[收尾验证说明](docs/validation-2026-10-18.md)。该百分比不是人工语义准确率，也不代表未知问题的泛化效果。
+
+仓库中的评测脚本直接调用 Agent Service，不经过 HTTP Router；本次 HTTP 入口验证的驱动与原始日志保存在本地。逐题报告按 `.gitignore` 不上传，仓库保留题集与运行脚本，便于在自己的知识库和环境中复测。
 
 单元测试还覆盖显式 LangGraph 工具闭环、五个 MCP 工具注册与 stdio 调用、RAG 缓存命中、网络重试、4xx 不重试、RAG 来源与 `X-Trace-ID` 透传，以及 SSE 状态顺序。GitHub Actions 在无 API Key 的环境中自动运行这些测试。
 
